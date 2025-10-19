@@ -1,0 +1,26 @@
+{
+  "name": "sqlserver-product-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
+    "database.hostname": "78.152.175.67",
+    "database.port": "1433",
+    "database.user": "ef_migrator",
+    "database.password": "Grimm_jow92",
+    "database.dbname": "ConcordDb",
+    "database.names": "ConcordDb",
+    "database.encrypt": "false",
+    "database.server.name": "cord",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "schema-changes.cord",
+    "table.include.list": "dbo.Product",
+    "snapshot.mode": "initial",
+    "topic.prefix": "cord",
+    "include.schema.changes": "false",
+    "decimal.handling.mode": "string",
+    "time.precision.mode": "connect",
+    "max.batch.size": "2048",
+    "max.queue.size": "8192",
+    "tombstones.on.delete": "true",
+    "poll.interval.ms": "1000"
+  }
+}

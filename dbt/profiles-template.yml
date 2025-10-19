@@ -1,0 +1,14 @@
+cord_bi:
+  target: dev
+  outputs:
+    dev:
+      type: trino
+      host: <trino-host>
+      port: 8080
+      user: <dbt-user>
+      catalog: hive
+      schema: analytics_dev
+      verify: false
+      session_properties:
+        query_max_run_time: '15m'
+      http_scheme: http

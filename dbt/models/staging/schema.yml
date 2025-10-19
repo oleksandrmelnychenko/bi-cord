@@ -1,0 +1,188 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: 'Bronze layer containing raw CDC events from Debezium'
+    schema: bronze
+    tables:
+      - name: product_cdc
+        description: 'Raw product CDC events with full Debezium payload'
+        columns:
+          - name: id
+            description: 'Surrogate key (auto-increment)'
+          - name: kafka_topic
+            description: 'Kafka topic name'
+          - name: kafka_partition
+            description: 'Kafka partition number'
+          - name: kafka_offset
+            description: 'Kafka offset (unique per partition)'
+          - name: cdc_payload
+            description: 'Full Debezium CDC event as JSONB'
+          - name: ingested_at
+            description: 'Timestamp when record was loaded into bronze table'
+
+models:
+  - name: stg_product
+    description: |
+      Cleaned and deduplicated product data extracted from CDC payloads.
+      Uses latest state per product_id. Now captures all 54 Product table columns including multilingual fields (Polish/Ukrainian),
+      search optimization fields, business flags, specifications, and source system tracking.
+    columns:
+      # Core Identity
+      - name: product_id
+        description: 'Unique product identifier (primary key from source system)'
+        tests:
+          - not_null
+          - unique
+      - name: net_uid
+        description: 'Globally unique identifier (GUID) for product across all systems'
+        tests:
+          - not_null
+      - name: created
+        description: 'Timestamp when product was created in source system'
+        tests:
+          - not_null
+      - name: updated
+        description: 'Timestamp when product was last updated in source system'
+        tests:
+          - not_null
+      - name: deleted
+        description: 'Soft delete flag - true if product is deleted'
+        tests:
+          - not_null
+
+      # Basic Product Information
+      - name: name
+        description: 'Product name (default language, likely English or Polish)'
+      - name: vendor_code
+        description: 'Vendor SKU code for the product'
+      - name: description
+        description: 'Product description text (default language)'
+      - name: size
+        description: 'Product size or dimensions as text'
+      - name: weight
+        description: 'Product weight in default unit (kg or g)'
+      - name: volume
+        description: 'Product volume specification'
+      - name: image
+        description: 'Product image URL or path'
+      - name: main_original_number
+        description: 'Main OEM part number for this product'
+      - name: measure_unit_id
+        description: 'Foreign key to MeasureUnit table (unit of measurement)'
+        tests:
+          - not_null
+      - name: top
+        description: 'Top product indicator/flag (likely for featured products)'
+
+      # Multilingual Content - Polish
+      - name: name_pl
+        description: 'Product name in Polish language'
+      - name: description_pl
+        description: 'Product description in Polish language'
+      - name: notes_pl
+        description: 'Additional notes/comments in Polish'
+      - name: synonyms_pl
+        description: 'Alternative names and synonyms in Polish'
+
+      # Multilingual Content - Ukrainian
+      - name: name_ua
+        description: 'Product name in Ukrainian language'
+      - name: description_ua
+        description: 'Product description in Ukrainian language'
+      - name: notes_ua
+        description: 'Additional notes/comments in Ukrainian'
+      - name: synonyms_ua
+        description: 'Alternative names and synonyms in Ukrainian'
+
+      # Search Optimization - Base Language
+      - name: search_name
+        description: 'Normalized/searchable product name (default language)'
+      - name: search_description
+        description: 'Normalized/searchable product description (default language)'
+      - name: search_size
+        description: 'Normalized/searchable size field'
+      - name: search_vendor_code
+        description: 'Normalized/searchable vendor code'
+
+      # Search Optimization - Polish
+      - name: search_name_pl
+        description: 'Normalized/searchable product name in Polish'
+      - name: search_description_pl
+        description: 'Normalized/searchable description in Polish'
+      - name: search_synonyms_pl
+        description: 'Normalized/searchable synonyms in Polish for full-text search'
+
+      # Search Optimization - Ukrainian
+      - name: search_name_ua
+        description: 'Normalized/searchable product name in Ukrainian'
+      - name: search_description_ua
+        description: 'Normalized/searchable description in Ukrainian'
+      - name: search_synonyms_ua
+        description: 'Normalized/searchable synonyms in Ukrainian for full-text search'
+
+      # Business Flags
+      - name: has_analogue
+        description: 'True if alternative/substitute products exist'
+        tests:
+          - not_null
+      - name: has_image
+        description: 'True if product has associated images'
+        tests:
+          - not_null
+      - name: is_for_sale
+        description: 'True if product is available for sale'
+        tests:
+          - not_null
+      - name: is_for_web
+        description: 'True if product should be displayed on website'
+        tests:
+          - not_null
+      - name: is_for_zero_sale
+        description: 'True if product can be sold at zero price (e.g., promotional items)'
+        tests:
+          - not_null
+      - name: has_component
+        description: 'True if product is composed of multiple components/parts'
+        tests:
+          - not_null
+
+      # Specifications & Standards
+      - name: ucgfea
+        description: 'UCGFEA customs classification code (Ukrainian Commodity Group Foreign Economic Activity)'
+      - name: standard
+        description: 'Product standard or certification (e.g., ISO, GOST)'
+      - name: order_standard
+        description: 'Ordering standard or guidelines for this product'
+      - name: packing_standard
+        description: 'Packing standard or requirements for shipping'
+
+      # Source System Integration
+      - name: source_amg_id
+        description: 'Product identifier from AMG legacy system (varbinary)'
+      - name: source_fenix_id
+        description: 'Product identifier from Fenix legacy system (varbinary)'
+      - name: parent_amg_id
+        description: 'Parent product identifier in AMG system (for product hierarchies)'
+      - name: parent_fenix_id
+        description: 'Parent product identifier in Fenix system (for product hierarchies)'
+      - name: source_amg_code
+        description: 'Numeric product code from AMG system'
+      - name: source_fenix_code
+        description: 'Numeric product code from Fenix system'
+
+      # CDC Metadata
+      - name: cdc_operation
+        description: 'CDC operation type from Debezium (r=read/snapshot, c=create, u=update, d=delete)'
+        tests:
+          - not_null
+      - name: source_timestamp
+        description: 'CDC event timestamp from source database transaction log'
+        tests:
+          - not_null
+      - name: is_snapshot
+        description: 'Indicates if this was a snapshot read (initial load) vs. live CDC event'
+      - name: ingested_at
+        description: 'Timestamp when this CDC event was ingested into bronze layer'
+        tests:
+          - not_null

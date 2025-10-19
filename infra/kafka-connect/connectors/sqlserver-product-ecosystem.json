@@ -1,0 +1,29 @@
+{
+  "name": "sqlserver-product-ecosystem-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.sqlserver.SqlServerConnector",
+    "database.hostname": "10.67.24.18",
+    "database.port": "1433",
+    "database.user": "sa",
+    "database.password": "Fenix12345",
+    "database.names": "ConcordDb",
+    "database.server.name": "cord",
+    "table.include.list": "dbo.Product,dbo.ProductAnalogue,dbo.ProductAvailability,dbo.ProductAvailabilityCartLimits,dbo.ProductCapitalization,dbo.ProductCapitalizationItem,dbo.ProductCarBrand,dbo.ProductCategory,dbo.ProductGroup,dbo.ProductGroupDiscount,dbo.ProductImage,dbo.ProductIncome,dbo.ProductIncomeItem,dbo.ProductLocation,dbo.ProductLocationHistory,dbo.ProductOriginalNumber,dbo.ProductPlacement,dbo.ProductPlacementHistory,dbo.ProductPlacementMovement,dbo.ProductPlacementStorage,dbo.ProductPricing,dbo.ProductProductGroup,dbo.ProductReservation,dbo.ProductSet,dbo.ProductSlug,dbo.ProductSpecification,dbo.ProductSubGroup,dbo.ProductTransfer,dbo.ProductTransferItem,dbo.ProductWriteOffRule,dbo.MeasureUnit",
+    "snapshot.mode": "initial",
+    "database.encrypt": "false",
+    "database.trustServerCertificate": "true",
+    "schema.history.internal.kafka.bootstrap.servers": "kafka:29092",
+    "schema.history.internal.kafka.topic": "schema-changes.cord.product-ecosystem",
+    "topic.prefix": "cord",
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "tombstones.on.delete": "false",
+    "provide.transaction.metadata": "false"
+  }
+}

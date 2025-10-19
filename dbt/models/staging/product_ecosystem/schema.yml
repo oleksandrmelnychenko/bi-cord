@@ -1,0 +1,367 @@
+version: 2
+
+sources:
+  - name: bronze
+    description: 'Bronze layer containing raw CDC events from Debezium'
+    schema: bronze
+    tables:
+      - name: product_analogue_cdc
+        description: 'Raw ProductAnalogue CDC events'
+
+      - name: product_availability_cdc
+        description: 'Raw ProductAvailability CDC events'
+
+      - name: product_availability_cart_limits_cdc
+        description: 'Raw ProductAvailabilityCartLimits CDC events'
+
+      - name: product_capitalization_cdc
+        description: 'Raw ProductCapitalization CDC events'
+
+      - name: product_capitalization_item_cdc
+        description: 'Raw ProductCapitalizationItem CDC events'
+
+      - name: product_car_brand_cdc
+        description: 'Raw ProductCarBrand CDC events'
+
+      - name: product_category_cdc
+        description: 'Raw ProductCategory CDC events'
+
+      - name: product_group_cdc
+        description: 'Raw ProductGroup CDC events'
+
+      - name: product_group_discount_cdc
+        description: 'Raw ProductGroupDiscount CDC events'
+
+      - name: product_image_cdc
+        description: 'Raw ProductImage CDC events'
+
+      - name: product_income_cdc
+        description: 'Raw ProductIncome CDC events'
+
+      - name: product_income_item_cdc
+        description: 'Raw ProductIncomeItem CDC events'
+
+      - name: product_location_cdc
+        description: 'Raw ProductLocation CDC events'
+
+      - name: product_location_history_cdc
+        description: 'Raw ProductLocationHistory CDC events'
+
+      - name: product_original_number_cdc
+        description: 'Raw ProductOriginalNumber CDC events'
+
+      - name: product_placement_cdc
+        description: 'Raw ProductPlacement CDC events'
+
+      - name: product_placement_history_cdc
+        description: 'Raw ProductPlacementHistory CDC events'
+
+      - name: product_placement_movement_cdc
+        description: 'Raw ProductPlacementMovement CDC events'
+
+      - name: product_placement_storage_cdc
+        description: 'Raw ProductPlacementStorage CDC events'
+
+      - name: product_pricing_cdc
+        description: 'Raw ProductPricing CDC events'
+
+      - name: product_product_group_cdc
+        description: 'Raw ProductProductGroup CDC events'
+
+      - name: product_reservation_cdc
+        description: 'Raw ProductReservation CDC events'
+
+      - name: product_set_cdc
+        description: 'Raw ProductSet CDC events'
+
+      - name: product_slug_cdc
+        description: 'Raw ProductSlug CDC events'
+
+      - name: product_specification_cdc
+        description: 'Raw ProductSpecification CDC events'
+
+      - name: product_sub_group_cdc
+        description: 'Raw ProductSubGroup CDC events'
+
+      - name: product_transfer_cdc
+        description: 'Raw ProductTransfer CDC events'
+
+      - name: product_transfer_item_cdc
+        description: 'Raw ProductTransferItem CDC events'
+
+      - name: product_write_off_rule_cdc
+        description: 'Raw ProductWriteOffRule CDC events'
+
+      - name: measure_unit_cdc
+        description: 'Raw MeasureUnit CDC events'
+
+models:
+  - name: stg_product_analogue
+    description: 'Staging model for ProductAnalogue table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_availability
+    description: 'Staging model for ProductAvailability table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_availability_cart_limits
+    description: 'Staging model for ProductAvailabilityCartLimits table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_capitalization
+    description: 'Staging model for ProductCapitalization table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_capitalization_item
+    description: 'Staging model for ProductCapitalizationItem table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_car_brand
+    description: 'Staging model for ProductCarBrand table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_category
+    description: 'Staging model for ProductCategory table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_group
+    description: 'Staging model for ProductGroup table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_group_discount
+    description: 'Staging model for ProductGroupDiscount table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_image
+    description: 'Staging model for ProductImage table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_income
+    description: 'Staging model for ProductIncome table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_income_item
+    description: 'Staging model for ProductIncomeItem table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_location
+    description: 'Staging model for ProductLocation table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_location_history
+    description: 'Staging model for ProductLocationHistory table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_original_number
+    description: 'Staging model for ProductOriginalNumber table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_placement
+    description: 'Staging model for ProductPlacement table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_placement_history
+    description: 'Staging model for ProductPlacementHistory table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_placement_movement
+    description: 'Staging model for ProductPlacementMovement table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_placement_storage
+    description: 'Staging model for ProductPlacementStorage table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_pricing
+    description: 'Staging model for ProductPricing table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_product_group
+    description: 'Staging model for ProductProductGroup table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_reservation
+    description: 'Staging model for ProductReservation table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_set
+    description: 'Staging model for ProductSet table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_slug
+    description: 'Staging model for ProductSlug table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_specification
+    description: 'Staging model for ProductSpecification table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_sub_group
+    description: 'Staging model for ProductSubGroup table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_transfer
+    description: 'Staging model for ProductTransfer table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_transfer_item
+    description: 'Staging model for ProductTransferItem table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_product_write_off_rule
+    description: 'Staging model for ProductWriteOffRule table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique
+
+  - name: stg_measure_unit
+    description: 'Staging model for MeasureUnit table'
+    columns:
+      - name: id
+        description: 'Primary key'
+        tests:
+          - not_null
+          - unique

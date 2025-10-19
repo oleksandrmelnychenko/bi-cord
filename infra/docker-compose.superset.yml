@@ -1,0 +1,55 @@
+# Apache Superset BI Dashboard
+# Usage: docker compose -f infra/docker-compose.superset.yml up -d
+
+version: '3.8'
+
+services:
+  superset:
+    image: apache/superset:latest
+    container_name: superset
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      # Database connection
+      SUPERSET_SECRET_KEY: 'your-secret-key-change-this-in-production'
+      # PostgreSQL connection for Superset metadata
+      DATABASE_DIALECT: postgresql
+      DATABASE_USER: analytics
+      DATABASE_PASSWORD: analytics
+      DATABASE_HOST: host.docker.internal  # Access host PostgreSQL
+      DATABASE_PORT: 5433
+      DATABASE_DB: analytics
+      # Superset config
+      SUPERSET_LOAD_EXAMPLES: 'no'
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/dashboards:/app/dashboards
+      - ./superset/sql:/app/sql
+    command:
+      - /bin/sh
+      - -c
+      - |
+        pip install psycopg2-binary &&
+        superset db upgrade &&
+        superset fab create-admin --username admin --firstname Admin --lastname User --email admin@superset.com --password admin &&
+        superset init &&
+        gunicorn --bind 0.0.0.0:8088 --workers 4 --timeout 120 --limit-request-line 0 --limit-request-field_size 0 'superset.app:create_app()'
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - bi-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  superset_home:
+    driver: local
+
+networks:
+  bi-network:
+    driver: bridge

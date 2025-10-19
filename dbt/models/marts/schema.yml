@@ -1,0 +1,146 @@
+version: 2
+
+models:
+  - name: dim_product
+    description: >
+      BI-optimized product dimension table containing active products only.
+      This table is denormalized and enriched with computed columns for easier
+      BI tool consumption. Materialized as a table for optimal query performance.
+
+      Data Source: staging_staging.stg_product (filtered to deleted = false)
+      Refresh: Run 'dbt run --select dim_product' to refresh
+
+      Key Features:
+      - Active products only (deleted = false)
+      - Multilingual support (Polish, Ukrainian)
+      - Computed columns (supplier_name, weight_category, multilingual_status)
+      - Helper columns (days_since_created, days_since_updated)
+      - Search-optimized fields included
+
+    columns:
+      - name: product_id
+        description: Unique product identifier (primary key from source system)
+        tests:
+          - not_null
+          - unique
+
+      - name: net_uid
+        description: Global unique identifier (UUID) for product
+        tests:
+          - not_null
+          - unique
+
+      - name: created
+        description: Timestamp when product was created in source system
+        tests:
+          - not_null
+
+      - name: updated
+        description: Timestamp when product was last updated in source system
+        tests:
+          - not_null
+
+      - name: days_since_created
+        description: Number of days since product was created (computed)
+
+      - name: days_since_updated
+        description: Number of days since product was last updated (computed)
+
+      - name: name
+        description: Product name in base language
+
+      - name: vendor_code
+        description: Unique vendor/SKU code for the product
+        tests:
+          - not_null
+
+      - name: supplier_prefix
+        description: First 4 characters of vendor code (supplier identifier)
+
+      - name: supplier_name
+        description: Supplier name derived from vendor code prefix (computed)
+
+      - name: description
+        description: Product description in base language
+
+      - name: size
+        description: Physical size or dimensions of the product
+
+      - name: weight
+        description: Product weight (unit TBD - verify in source)
+
+      - name: weight_category
+        description: Categorized weight (Missing, Light, Medium, Heavy) (computed)
+
+      - name: volume
+        description: Product volume
+
+      - name: image
+        description: Image file reference or path
+
+      - name: main_original_number
+        description: Primary OEM part number
+
+      - name: polish_name
+        description: Product name in Polish language
+
+      - name: polish_description
+        description: Product description in Polish language
+
+      - name: ukrainian_name
+        description: Product name in Ukrainian language
+
+      - name: ukrainian_description
+        description: Product description in Ukrainian language
+
+      - name: multilingual_status
+        description: Completeness of multilingual fields (Complete, Partial, Missing) (computed)
+
+      - name: search_name
+        description: Search-optimized product name (base language)
+
+      - name: search_vendor_code
+        description: Search-optimized vendor code
+
+      - name: search_polish_name
+        description: Search-optimized product name (Polish)
+
+      - name: search_ukrainian_name
+        description: Search-optimized product name (Ukrainian)
+
+      - name: has_analogue
+        description: Boolean flag indicating if product has analogues/alternatives
+
+      - name: has_image
+        description: Boolean flag indicating if product has image attached
+
+      - name: is_for_sale
+        description: Boolean flag indicating if product is available for sale
+
+      - name: is_for_web
+        description: Boolean flag indicating if product is displayed on website
+
+      - name: is_for_zero_sale
+        description: Boolean flag indicating if product allows zero-price sales
+
+      - name: has_component
+        description: Boolean flag indicating if product has sub-components
+
+      - name: ucgfea
+        description: UCGFEA classification code
+
+      - name: standard
+        description: Product standard or specification
+
+      - name: source_amg_code
+        description: Source system identifier (AMG system)
+
+      - name: source_fenix_code
+        description: Source system identifier (Fenix system)
+
+      - name: last_modified_in_source
+        description: Timestamp of last modification in source database (CDC metadata)
+
+      - name: ingested_timestamp
+        description: Timestamp when record was ingested into analytics platform
+
