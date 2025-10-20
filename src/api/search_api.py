@@ -120,6 +120,35 @@ class SearchResponse(BaseModel):
     total_results: int
     execution_time_ms: float
     results: List[ProductResult]
+    search_id: Optional[int] = None  # Added for click tracking
+
+
+class ClickTrackingRequest(BaseModel):
+    """Request model for click tracking"""
+    search_id: int = Field(..., description="ID of the search query from search_query_log")
+    product_id: int = Field(..., description="ID of the clicked product")
+    rank_position: int = Field(..., description="Position of product in search results (1-indexed)", ge=1)
+    click_timestamp: Optional[str] = Field(None, description="ISO timestamp of click (server-side if not provided)")
+
+
+class FeedbackRequest(BaseModel):
+    """Request model for search feedback"""
+    search_id: int = Field(..., description="ID of the search query")
+    feedback_type: str = Field(..., description="Type of feedback: 'helpful', 'not_helpful', 'no_results', 'irrelevant'")
+    comment: Optional[str] = Field(None, description="Optional user comment", max_length=500)
+
+
+class ClickTrackingResponse(BaseModel):
+    """Response model for click tracking"""
+    success: bool
+    message: str
+    click_id: Optional[int] = None
+
+
+class FeedbackResponse(BaseModel):
+    """Response model for feedback submission"""
+    success: bool
+    message: str
 
 
 # ============================================================================
@@ -259,6 +288,39 @@ def classify_query(query: str) -> QueryType:
     return QueryType.NATURAL_LANGUAGE
 
 
+def log_search_query(query: str, total_results: int, execution_time_ms: float,
+                     search_type: str = "hybrid", user_id: Optional[str] = None,
+                     session_id: Optional[str] = None) -> Optional[int]:
+    """
+    Log search query to database for analytics and learning-to-rank
+
+    Returns:
+        search_id (int): ID of the logged search query (query_id), or None if logging failed
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                INSERT INTO analytics_features.search_query_log
+                    (query_text, result_count, execution_time_ms, search_type, user_id, session_id, timestamp)
+                VALUES (%s, %s, %s, %s, %s, %s, NOW())
+                RETURNING query_id
+            """, (query, total_results, execution_time_ms, search_type, user_id, session_id))
+
+            row = cursor.fetchone()
+            search_id = row['query_id'] if row else None
+
+            conn.commit()
+
+            logger.info(f"Logged search query: '{query}' (search_id={search_id})")
+            return search_id
+
+    except Exception as e:
+        logger.error(f"Failed to log search query: {e}")
+        return None
+
+
 # ============================================================================
 # API Endpoints
 # ============================================================================
@@ -267,17 +329,24 @@ def classify_query(query: str) -> QueryType:
 async def root():
     """API root endpoint"""
     return {
-        "service": "Product Semantic Search API",
-        "version": "2.0.0",
+        "service": "Product AI Search API",
+        "version": "3.0.0",
         "status": "healthy",
+        "description": "World-class AI-powered product search with hybrid ML ranking",
         "endpoints": {
-            "smart_search": "/search/smart (RECOMMENDED - Auto-routing)",
-            "exact_match": "/search/exact (Fast <50ms text search)",
-            "semantic_search": "/search/semantic",
-            "filtered_search": "/search/filtered",
-            "hybrid_search": "/search/hybrid",
-            "similar_products": "/search/similar/{product_id}",
-            "health": "/health"
+            "search": "POST /search - Main search endpoint with AI/ML hybrid ranking",
+            "click_tracking": "POST /search/click - Track user clicks for learning-to-rank",
+            "feedback": "POST /search/feedback - Collect search quality feedback",
+            "health": "GET /health - Health check"
+        },
+        "features": {
+            "hybrid_search": "Combines 4 techniques: Full-text, Trigram, Exact, Vector (HNSW)",
+            "ml_ranking": "7-signal ensemble ranking with configurable weights",
+            "query_logging": "All searches logged for analytics and model training",
+            "click_tracking": "Track user behavior for learning-to-rank",
+            "multilingual": "Ukrainian, Polish, English support",
+            "performance": "<200ms for 278k products",
+            "auto_classification": "Intelligent query routing (vendor codes, exact phrases, NL)"
         }
     }
 
@@ -305,8 +374,12 @@ async def health_check():
         raise HTTPException(status_code=503, detail="Service unhealthy")
 
 
-@app.post("/search/semantic", response_model=SearchResponse)
-async def semantic_search(request: SemanticSearchRequest):
+# ============================================================================
+# Legacy Endpoints - Disabled in v3.0 (Single endpoint architecture)
+# ============================================================================
+
+# @app.post("/search/semantic", response_model=SearchResponse)
+async def semantic_search_DISABLED(request: SemanticSearchRequest):
     """
     Pure semantic search using vector similarity.
 
@@ -364,8 +437,8 @@ async def semantic_search(request: SemanticSearchRequest):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@app.post("/search/filtered", response_model=SearchResponse)
-async def filtered_search(request: FilteredSearchRequest):
+# @app.post("/search/filtered", response_model=SearchResponse)
+async def filtered_search_DISABLED(request: FilteredSearchRequest):
     """
     Filtered semantic search with business logic filters.
 
@@ -458,8 +531,8 @@ async def filtered_search(request: FilteredSearchRequest):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@app.post("/search/hybrid", response_model=SearchResponse)
-async def hybrid_search_endpoint(request: HybridSearchRequest):
+# @app.post("/search/hybrid", response_model=SearchResponse)
+async def hybrid_search_endpoint_DISABLED(request: HybridSearchRequest):
     """
     Advanced Hybrid Search combining ALL search techniques with ML ranking.
 
@@ -499,11 +572,20 @@ async def hybrid_search_endpoint(request: HybridSearchRequest):
             product['similarity_score'] = product.get('ranking_score', 0.0)
             results.append(ProductResult(**product))
 
+        # Log the search query
+        search_id = log_search_query(
+            query=result_dict['query'],
+            total_results=result_dict['total_results'],
+            execution_time_ms=result_dict['execution_time_ms'],
+            search_type="hybrid"
+        )
+
         return SearchResponse(
             query=result_dict['query'],
             total_results=result_dict['total_results'],
             execution_time_ms=result_dict['execution_time_ms'],
-            results=results
+            results=results,
+            search_id=search_id
         )
 
     except Exception as e:
@@ -511,8 +593,8 @@ async def hybrid_search_endpoint(request: HybridSearchRequest):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@app.get("/search/similar/{product_id}", response_model=SearchResponse)
-async def find_similar_products(
+# @app.get("/search/similar/{product_id}", response_model=SearchResponse)
+async def find_similar_products_DISABLED(
     product_id: int,
     limit: int = Query(10, ge=1, le=50, description="Maximum number of similar products")
 ):
@@ -584,8 +666,8 @@ async def find_similar_products(
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@app.post("/search/exact", response_model=SearchResponse)
-async def exact_match_search(request: SemanticSearchRequest):
+# @app.post("/search/exact", response_model=SearchResponse)
+async def exact_match_search_DISABLED(request: SemanticSearchRequest):
     """
     Fast exact/partial text matching on vendor codes and product names
 
@@ -654,24 +736,26 @@ async def exact_match_search(request: SemanticSearchRequest):
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 
-@app.post("/search/smart", response_model=SearchResponse)
-async def smart_search(request: SemanticSearchRequest):
+@app.post("/search", response_model=SearchResponse)
+async def search(request: SemanticSearchRequest):
     """
-    Intelligent search with hybrid multi-technique approach (RECOMMENDED)
+    **Main Search Endpoint - World-Class AI-Powered Product Search**
 
-    Uses advanced hybrid search combining:
-        - Full-text search (GIN indexes)
-        - Trigram fuzzy matching
-        - Exact text matching
-        - Vector semantic search
-        - ML ensemble ranking
+    This endpoint combines the best of all search techniques with intelligent ML ranking:
+        - **Full-text Search**: PostgreSQL GIN indexes with ts_rank
+        - **Trigram Fuzzy Matching**: Typo-tolerant search for misspellings
+        - **Exact Text Matching**: Fast exact matches for vendor codes
+        - **Vector Semantic Search**: AI embeddings with HNSW indexing
+        - **ML Ensemble Ranking**: 7-signal ranking (exact, semantic, popularity, availability, freshness)
 
-    Query Classification (for optimization):
-        - VENDOR_CODE: Prioritizes exact matching (e.g., "100623SAMKO")
-        - EXACT_PHRASE: Prioritizes text matching (e.g., "Гвинт кріплення")
-        - NATURAL_LANGUAGE: Balanced approach (e.g., "brake pads for trucks")
+    **Intelligent Query Classification** (automatic):
+        - VENDOR_CODE: "100623SAMKO" → Prioritizes exact matching
+        - EXACT_PHRASE: "Гвинт кріплення" → Prioritizes text matching
+        - NATURAL_LANGUAGE: "brake pads for trucks" → Balanced semantic approach
 
-    This is the recommended endpoint for production use - mimics Amazon/Google search intelligence
+    **Performance**: <200ms for 278,000 products
+    **Languages**: Ukrainian, Polish, English
+    **Auto-logged**: Every search is tracked for analytics and ML training
     """
     query_type: QueryType = classify_query(request.query)
     logger.info(f"Query '{request.query}' classified as: {query_type.value}")
@@ -705,12 +789,135 @@ async def smart_search(request: SemanticSearchRequest):
         product['similarity_score'] = product.get('ranking_score', 0.0)
         results.append(ProductResult(**product))
 
+    # Log the search query
+    search_id = log_search_query(
+        query=request.query,
+        total_results=result_dict['total_results'],
+        execution_time_ms=result_dict['execution_time_ms'],
+        search_type="smart"
+    )
+
     return SearchResponse(
         query=result_dict['query'],
         total_results=result_dict['total_results'],
         execution_time_ms=result_dict['execution_time_ms'],
-        results=results
+        results=results,
+        search_id=search_id
     )
+
+
+@app.post("/search/click", response_model=ClickTrackingResponse)
+async def track_click(request: ClickTrackingRequest):
+    """
+    Track user clicks on search results for learning-to-rank
+
+    This endpoint logs which products users click on for each search query.
+    The data is used to:
+        - Calculate click-through rates (CTR)
+        - Train learning-to-rank models
+        - Improve search relevance over time
+        - Analyze user behavior patterns
+
+    Use Case:
+        When a user clicks on a product in search results, send this event to
+        build behavioral signals for ML ranking.
+    """
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Verify search_id exists
+            cursor.execute(
+                "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
+                (request.search_id,)
+            )
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
+
+            # Insert click event
+            cursor.execute("""
+                INSERT INTO analytics_features.search_click_log
+                    (query_id, product_id, rank_position, clicked_at)
+                VALUES (%s, %s, %s, NOW())
+                RETURNING click_id
+            """, (request.search_id, request.product_id, request.rank_position))
+
+            row = cursor.fetchone()
+            click_id = row['click_id'] if row else None
+
+            conn.commit()
+
+            logger.info(f"Logged click: search_id={request.search_id}, product_id={request.product_id}, rank={request.rank_position}")
+
+            return ClickTrackingResponse(
+                success=True,
+                message="Click tracked successfully",
+                click_id=click_id
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to track click: {e}")
+        raise HTTPException(status_code=500, detail=f"Click tracking failed: {str(e)}")
+
+
+@app.post("/search/feedback", response_model=FeedbackResponse)
+async def submit_feedback(request: FeedbackRequest):
+    """
+    Collect user feedback on search quality
+
+    This endpoint collects explicit feedback from users about search results.
+    Feedback types:
+        - 'helpful': Search results were relevant and helpful
+        - 'not_helpful': Search results were not useful
+        - 'no_results': No results found for the query
+        - 'irrelevant': Results were not related to the query
+
+    Use Case:
+        Allow users to rate search quality, helping identify problem queries
+        and improve search algorithms.
+    """
+    valid_feedback_types = {'helpful', 'not_helpful', 'no_results', 'irrelevant'}
+    if request.feedback_type not in valid_feedback_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid feedback_type. Must be one of: {valid_feedback_types}"
+        )
+
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+
+            # Verify search_id exists
+            cursor.execute(
+                "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
+                (request.search_id,)
+            )
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
+
+            # Store feedback (update search_query_log with feedback)
+            cursor.execute("""
+                UPDATE analytics_features.search_query_log
+                SET feedback_type = %s, feedback_comment = %s, feedback_timestamp = NOW()
+                WHERE query_id = %s
+            """, (request.feedback_type, request.comment, request.search_id))
+
+            conn.commit()
+
+            logger.info(f"Logged feedback: search_id={request.search_id}, type={request.feedback_type}")
+
+            return FeedbackResponse(
+                success=True,
+                message="Feedback submitted successfully"
+            )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to submit feedback: {e}")
+        raise HTTPException(status_code=500, detail=f"Feedback submission failed: {str(e)}")
 
 
 # ============================================================================
