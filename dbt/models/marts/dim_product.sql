@@ -10,6 +10,38 @@ with product_base as (
     where deleted = false
 ),
 
+-- Aggregate availability by product across all storages
+availability_agg as (
+    select
+        product_i_d as product_id,
+        sum(amount) as total_available_amount,
+        max(case when amount > 0 then 1 else 0 end)::boolean as is_available,
+        count(distinct storage_i_d) as storage_count
+    from {{ ref('stg_product_availability') }}
+    where deleted = false
+    group by product_i_d
+),
+
+-- Aggregate original numbers into array
+original_numbers_agg as (
+    select
+        product_i_d as product_id,
+        array_agg(distinct original_number_i_d) filter (where original_number_i_d is not null) as original_number_ids
+    from {{ ref('stg_product_original_number') }}
+    where deleted = false
+    group by product_i_d
+),
+
+-- Aggregate analogues into array
+analogues_agg as (
+    select
+        base_product_i_d as product_id,
+        array_agg(distinct analogue_product_i_d) filter (where analogue_product_i_d is not null) as analogue_product_ids
+    from {{ ref('stg_product_analogue') }}
+    where deleted = false
+    group by base_product_i_d
+),
+
 enriched as (
     select
         -- Core Identity
@@ -79,11 +111,39 @@ enriched as (
             WHEN weight >= 10 THEN 'Heavy (>10kg)'
         END as weight_category,
 
+        -- **DENORMALIZED AVAILABILITY** (from ProductAvailability)
+        coalesce(av.total_available_amount, 0) as total_available_amount,
+        coalesce(av.storage_count, 0) as storage_count,
+
+        -- **DENORMALIZED ORIGINAL NUMBERS** (from ProductOriginalNumber)
+        on_agg.original_number_ids,
+
+        -- **DENORMALIZED ANALOGUES** (from ProductAnalogue)
+        an_agg.analogue_product_ids,
+
+        -- **SEARCH RANKING SIGNALS**
+        CASE
+            WHEN coalesce(av.is_available, false) = true THEN 1.0
+            WHEN p.has_analogue THEN 0.5
+            ELSE 0.0
+        END as availability_score,
+
+        CASE
+            WHEN CURRENT_DATE - p.created::date < 30 THEN 1.0
+            WHEN CURRENT_DATE - p.created::date < 90 THEN 0.75
+            WHEN CURRENT_DATE - p.created::date < 180 THEN 0.5
+            WHEN CURRENT_DATE - p.created::date < 365 THEN 0.25
+            ELSE 0.1
+        END as freshness_score,
+
         -- Metadata
         source_timestamp,
         ingested_at
 
-    from product_base
+    from product_base p
+    left join availability_agg av on p.product_id = av.product_id
+    left join original_numbers_agg on_agg on p.product_id = on_agg.product_id
+    left join analogues_agg an_agg on p.product_id = an_agg.product_id
 )
 
 select
@@ -136,6 +196,16 @@ select
     -- Source Systems
     source_amg_code,
     source_fenix_code,
+
+    -- **DENORMALIZED JOINS** (eliminates runtime JOINs)
+    total_available_amount,
+    storage_count,
+    original_number_ids,
+    analogue_product_ids,
+
+    -- **SEARCH RANKING SIGNALS** (for ML ranking)
+    availability_score,
+    freshness_score,
 
     -- Metadata
     source_timestamp as last_modified_in_source,

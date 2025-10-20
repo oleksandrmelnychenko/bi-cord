@@ -29,6 +29,27 @@ from src.ml.query_normalizer import normalize_query
 from src.config.database import get_postgres_connection
 
 
+# Common SELECT fields for all search queries
+PRODUCT_SELECT_FIELDS = """
+    p.product_id,
+    p.vendor_code,
+    p.name,
+    p.polish_name,
+    p.ukrainian_name,
+    p.supplier_name,
+    p.weight,
+    p.is_for_sale,
+    p.is_for_web,
+    p.has_image,
+    p.total_available_amount,
+    p.storage_count,
+    p.original_number_ids,
+    p.analogue_product_ids,
+    p.availability_score,
+    p.freshness_score
+"""
+
+
 def get_db_connection():
     """
     Create database connection using centralized configuration
@@ -71,18 +92,10 @@ async def full_text_search(
 
         tsquery: str = ' | '.join(normalized_words)
 
-        sql: str = """
+        # TODO: Switch to dim_product_search after dbt build (has denormalized fields)
+        sql: str = f"""
             SELECT
-                p.product_id,
-                p.vendor_code,
-                p.name,
-                p.polish_name,
-                p.ukrainian_name,
-                p.supplier_name,
-                p.weight,
-                p.is_for_sale,
-                p.is_for_web,
-                p.has_image,
+                {PRODUCT_SELECT_FIELDS},
                 ts_rank_cd(p.search_vector, to_tsquery('simple', %s)) as fulltext_rank,
                 0.0 as exact_match_score,
                 0.0 as trigram_similarity,
@@ -118,18 +131,9 @@ async def trigram_fuzzy_search(
     with get_db_connection() as conn:
         cursor: DictCursor = conn.cursor(cursor_factory=DictCursor)
 
-        sql: str = """
+        sql: str = f"""
             SELECT
-                p.product_id,
-                p.vendor_code,
-                p.name,
-                p.polish_name,
-                p.ukrainian_name,
-                p.supplier_name,
-                p.weight,
-                p.is_for_sale,
-                p.is_for_web,
-                p.has_image,
+                {PRODUCT_SELECT_FIELDS},
                 GREATEST(
                     similarity(p.vendor_code, %s),
                     similarity(p.name, %s),
@@ -202,16 +206,7 @@ async def exact_match_search(
 
         sql: str = f"""
             SELECT
-                p.product_id,
-                p.vendor_code,
-                p.name,
-                p.polish_name,
-                p.ukrainian_name,
-                p.supplier_name,
-                p.weight,
-                p.is_for_sale,
-                p.is_for_web,
-                p.has_image,
+                {PRODUCT_SELECT_FIELDS},
                 GREATEST(
                     CASE WHEN ({' OR '.join(vendor_conditions)}) THEN 1.0 ELSE 0.0 END,
                     CASE WHEN ({' OR '.join(name_conditions)}) THEN 0.95 ELSE 0.0 END,
@@ -263,18 +258,9 @@ async def vector_semantic_search(
     with get_db_connection() as conn:
         cursor: DictCursor = conn.cursor(cursor_factory=DictCursor)
 
-        sql: str = """
+        sql: str = f"""
             SELECT
-                p.product_id,
-                p.vendor_code,
-                p.name,
-                p.polish_name,
-                p.ukrainian_name,
-                p.supplier_name,
-                p.weight,
-                p.is_for_sale,
-                p.is_for_web,
-                p.has_image,
+                {PRODUCT_SELECT_FIELDS},
                 1 - (e.embedding <=> %s::vector) as similarity_score,
                 0.0 as exact_match_score,
                 0.0 as fulltext_rank,

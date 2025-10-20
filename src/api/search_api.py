@@ -113,6 +113,14 @@ class ProductResult(BaseModel):
     similarity_score: float
     ranking_score: Optional[float] = None
 
+    # Enhanced fields from dim_product_search
+    total_available_amount: Optional[float] = None
+    storage_count: Optional[int] = None
+    original_number_ids: Optional[List[int]] = None
+    analogue_product_ids: Optional[List[int]] = None
+    availability_score: Optional[float] = None
+    freshness_score: Optional[float] = None
+
 
 class SearchResponse(BaseModel):
     """Response model for search results"""
