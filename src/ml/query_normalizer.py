@@ -1,7 +1,7 @@
 """
 Production-Grade Query Normalizer for Slavic Languages (ULTIMATE EDITION)
 
-Handles Ukrainian/Russian/Polish morphology using 3-tier hybrid architecture:
+Handles Ukrainian/Russian morphology using 3-tier hybrid architecture:
 - Tier 1: Rule-based stemming (fast, 80% coverage)
 - Tier 2: Domain-specific synonym dictionary (automotive terms)
 - Tier 3: Performance caching for repeated queries
@@ -9,7 +9,7 @@ Handles Ukrainian/Russian/Polish morphology using 3-tier hybrid architecture:
 Features:
 - Rule-based Ukrainian/Russian stemming (adjectives, nouns)
 - Grammatical case normalization (nominative, genitive, instrumental)
-- Comprehensive cross-language synonym mapping (Ukrainian/Russian/Polish)
+- Comprehensive cross-language synonym mapping (Ukrainian/Russian)
 - Technical abbreviations and acronyms
 - LRU caching for performance optimization
 - Stopword removal
@@ -47,12 +47,17 @@ RUSSIAN_STOPWORDS: Set[str] = {
     'под', 'над', 'за', 'перед', 'между', 'через', 'без', 'о', 'об', 'из',
 }
 
-POLISH_STOPWORDS: Set[str] = {
-    'i', 'lub', 'w', 'na', 'z', 'dla', 'do', 'od', 'po', 'przy',
-    'pod', 'nad', 'za', 'przed', 'między', 'przez', 'bez', 'o',
-}
+ALL_STOPWORDS: Set[str] = UKRAINIAN_STOPWORDS | RUSSIAN_STOPWORDS
 
-ALL_STOPWORDS: Set[str] = UKRAINIAN_STOPWORDS | RUSSIAN_STOPWORDS | POLISH_STOPWORDS
+POLISH_CHARACTERS: Set[str] = set('ąćęłńóśźż')
+
+
+def contains_polish_characters(word: str) -> bool:
+    """
+    Determine if word contains any Polish-specific characters
+    """
+    lower_word: str = word.lower()
+    return any(char in POLISH_CHARACTERS for char in lower_word)
 
 
 # ============================================================================
@@ -67,23 +72,23 @@ RUSSIAN_UKRAINIAN_VARIANTS: Dict[str, Set[str]] = {
     'тормозной': {'гальмо', 'тормоз', 'тормозной', 'гальмівний'},
 
     # Brake components specific
-    'колодка': {'колодка', 'колодки', 'кlocek'},
-    'диск': {'диск', 'disc', 'tarcza'},
-    'барабан': {'барабан', 'bęben', 'drum'},
+    'колодка': {'колодка', 'колодки'},
+    'диск': {'диск', 'disc'},
+    'барабан': {'барабан', 'drum'},
 
     # Clutch (зчеплення)
-    'сцепление': {'зчеплення', 'сцепление', 'sprzęgło'},
-    'зчеплення': {'зчеплення', 'сцепление', 'sprzęgło'},
+    'сцепление': {'зчеплення', 'сцепление'},
+    'зчеплення': {'зчеплення', 'сцепление'},
 
     # Fasteners (кріплення)
-    'крепление': {'кріплення', 'крепление', 'креплення', 'mocowanie'},
-    'кріплення': {'кріплення', 'крепление', 'креплення', 'mocowanie'},
-    'креплення': {'кріплення', 'крепление', 'креплення', 'mocowanie'},
-    'винт': {'гвинт', 'винт', 'гвинта', 'винта', 'śruba'},
-    'гвинт': {'гвинт', 'винт', 'гвинта', 'винта', 'śruba'},
-    'гвинта': {'гвинт', 'винт', 'гвинта', 'винта', 'śruba'},
-    'винта': {'гвинт', 'винт', 'гвинта', 'винта', 'śruba'},
-    'болт': {'болт', 'śruba'},
+    'крепление': {'кріплення', 'крепление', 'креплення'},
+    'кріплення': {'кріплення', 'крепление', 'креплення'},
+    'креплення': {'кріплення', 'крепление', 'креплення'},
+    'винт': {'гвинт', 'винт', 'гвинта', 'винта'},
+    'гвинт': {'гвинт', 'винт', 'гвинта', 'винта'},
+    'гвинта': {'гвинт', 'винт', 'гвинта', 'винта'},
+    'винта': {'гвинт', 'винт', 'гвинта', 'винта'},
+    'болт': {'болт'},
 
     # Engine components
     'цилиндр': {'циліндр', 'цилиндр', 'cylinder'},
@@ -92,33 +97,32 @@ RUSSIAN_UKRAINIAN_VARIANTS: Dict[str, Set[str]] = {
     'палець': {'палець', 'палец', 'палуч'},
 
     # Filters (фільтри)
-    'фильтр': {'фільтр', 'фильтр', 'filtr', 'wkład'},
-    'фільтр': {'фільтр', 'фильтр', 'filtr', 'wkład'},
-    'воздушный': {'повітряний', 'воздушний', 'powietrza'},
-    'повітряний': {'повітряний', 'воздушный', 'powietrza'},
-    'масляный': {'масляний', 'масляный', 'oleju'},
-    'масляний': {'масляний', 'масляный', 'oleju'},
-    'топливный': {'паливний', 'топливный', 'paliwa'},
-    'паливний': {'паливний', 'топливный', 'paliwa'},
+    'фильтр': {'фільтр', 'фильтр', 'filter'},
+    'фільтр': {'фільтр', 'фильтр', 'filter'},
+    'воздушный': {'повітряний', 'воздушный'},
+    'повітряний': {'повітряний', 'воздушный'},
+    'масляный': {'масляний', 'масляный'},
+    'масляний': {'масляний', 'масляный'},
+    'топливный': {'паливний', 'топливный'},
+    'паливний': {'паливний', 'топливный'},
 
     # Suspension (підвіска)
-    'амортизатор': {'амортизатор', 'amortyzator'},
-    'пружина': {'пружина', 'sprężyna'},
-    'ресора': {'ресора', 'ресори', 'resor'},
+    'амортизатор': {'амортизатор'},
+    'пружина': {'пружина'},
+    'ресора': {'ресора', 'ресори'},
 
     # Seals and gaskets
-    'сальник': {'сальник', 'simering', 'uszczelniacz'},
-    'прокладка': {'прокладка', 'uszczelka', 'gasket'},
+    'сальник': {'сальник', 'simering'},
+    'прокладка': {'прокладка', 'gasket'},
 
     # Other components
-    'клапан': {'клапан', 'zawór', 'valve'},
-    'втулка': {'втулка', 'tuleja', 'bushing'},
-    'патрубок': {'патрубок', 'przewód', 'hose'},
-    'датчик': {'датчик', 'czujnik', 'sensor'},
-    'компресор': {'компресор', 'компресора', 'sprężarka', 'compressor'},
-    'компресора': {'компресор', 'компресора', 'sprężarka', 'compressor'},
+    'клапан': {'клапан', 'valve'},
+    'втулка': {'втулка', 'bushing'},
+    'патрубок': {'патрубок', 'hose'},
+    'датчик': {'датчик', 'sensor'},
+    'компресор': {'компресор', 'компресора', 'compressor'},
+    'компресора': {'компресор', 'компресора', 'compressor'},
 }
-
 
 # ============================================================================
 # Technical Abbreviations and Acronyms (Tier 2 - NEW)
@@ -134,9 +138,9 @@ TECHNICAL_ABBREVIATIONS: Dict[str, Set[str]] = {
     # Vehicle types
     'грузовик': {'вантажівка', 'грузовик', 'ciężarówka', 'truck'},
     'вантажівка': {'вантажівка', 'грузовик', 'ciężarówka', 'truck'},
-    'причеп': {'причіп', 'прицеп', 'naczepa', 'trailer'},
-    'причіп': {'причіп', 'прицеп', 'naczepa', 'trailer'},
-    'прицеп': {'причіп', 'прицеп', 'naczepa', 'trailer'},
+    'причеп': {'причіп', 'прицеп', 'trailer'},
+    'причіп': {'причіп', 'прицеп', 'trailer'},
+    'прицеп': {'причіп', 'прицеп', 'trailer'},
 
     # Manufacturers/Standards
     'bpw': {'bpw'},
@@ -323,7 +327,12 @@ def normalize_ukrainian_word_cached(word: str) -> frozenset:
     # Apply cross-language variants
     normalized_forms.update(normalize_russian_ukrainian_word(word_lower))
 
-    return frozenset(normalized_forms)
+    filtered_forms: Set[str] = {
+        form for form in normalized_forms
+        if not contains_polish_characters(form)
+    }
+
+    return frozenset(filtered_forms)
 
 
 def normalize_ukrainian_word(word: str) -> List[str]:
@@ -343,9 +352,13 @@ def tokenize_query(query: str) -> List[str]:
 
     Preserves Unicode characters for Slavic languages
     """
-    query_clean: str = re.sub(r'[^\w\s\-]', ' ', query, flags=re.UNICODE)
+    query_lower: str = query.lower()
+    query_clean: str = re.sub(r'[^\w\s\-]', ' ', query_lower, flags=re.UNICODE)
     words: List[str] = query_clean.split()
-    return [w for w in words if len(w) >= 2]
+    return [
+        w for w in words
+        if len(w) >= 2 and not contains_polish_characters(w)
+    ]
 
 
 def remove_stopwords(words: List[str]) -> List[str]:

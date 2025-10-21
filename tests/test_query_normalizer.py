@@ -3,7 +3,7 @@ Comprehensive Unit Tests for Query Normalizer (ULTIMATE EDITION)
 
 Tests cover:
 1. Word-order invariance
-2. Ukrainian/Russian/Polish morphological handling
+2. Ukrainian/Russian morphological handling
 3. Automotive synonym expansion
 4. Technical abbreviation recognition
 5. Stopword removal
@@ -27,6 +27,7 @@ from ml.query_normalizer import (
     get_cache_stats,
     stem_ukrainian_adjective,
     stem_ukrainian_noun,
+    contains_polish_characters,
 )
 
 
@@ -45,14 +46,20 @@ class TestQueryNormalizerBasics(unittest.TestCase):
     def test_tokenize_ukrainian_query(self):
         """Test Ukrainian query tokenization"""
         result: List[str] = tokenize_query("Гвинт кріплення амортизатора")
-        # tokenize_query preserves case; normalization happens in normalize_query
-        self.assertEqual(result, ['Гвинт', 'кріплення', 'амортизатора'])
+        self.assertEqual(result, ['гвинт', 'кріплення', 'амортизатора'])
 
     def test_tokenize_mixed_case(self):
         """Test mixed case normalization"""
         result: List[str] = tokenize_query("ABS System Filter")
-        # tokenize_query preserves case; normalization happens in normalize_query
-        self.assertEqual(result, ['ABS', 'System', 'Filter'])
+        self.assertEqual(result, ['abs', 'system', 'filter'])
+
+    def test_tokenize_polish_diacritics(self):
+        """Polish characters should be excluded entirely"""
+        result: List[str] = tokenize_query("Śruby półki dla ciężarówki")
+        self.assertTrue(
+            all(not contains_polish_characters(token) for token in result),
+            f"Tokens should not contain Polish characters: {result}"
+        )
 
     def test_remove_stopwords_ukrainian(self):
         """Test Ukrainian stopword removal"""
@@ -64,7 +71,7 @@ class TestQueryNormalizerBasics(unittest.TestCase):
         """Test English stopword removal"""
         words: List[str] = ['the', 'brake', 'for', 'pads']
         result: List[str] = remove_stopwords(words)
-        # Current implementation only removes Ukrainian/Russian/Polish stopwords
+        # Current implementation only removes Ukrainian/Russian stopwords
         # English stopwords like 'the', 'for' are not in the stopword list
         self.assertIn('brake', result)
         self.assertIn('pads', result)
@@ -175,7 +182,7 @@ class TestAutomotiveSynonyms(unittest.TestCase):
 
         self.assertIn('фільтр', result, "Should include Ukrainian variant")
         self.assertIn('повітряний', result, "Should include Ukrainian air filter term")
-        self.assertIn('filtr', result, "Should include Polish variant")
+        self.assertNotIn('filtr', result, "Polish variants should be excluded")
 
     def test_oil_filter_synonyms(self):
         """Test oil filter multilingual support"""
@@ -184,7 +191,7 @@ class TestAutomotiveSynonyms(unittest.TestCase):
 
         self.assertIn('масляний', result)
         self.assertIn('масляный', result, "Should include Russian variant")
-        self.assertIn('oleju', result, "Should include Polish variant")
+        self.assertNotIn('oleju', result, "Polish variants should be excluded")
 
     def test_suspension_synonyms(self):
         """Test suspension component synonyms"""
@@ -192,7 +199,7 @@ class TestAutomotiveSynonyms(unittest.TestCase):
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
         self.assertIn('амортизатор', result)
-        self.assertIn('amortyzator', result, "Should include Polish variant")
+        self.assertNotIn('amortyzator', result, "Polish variants should be excluded")
         self.assertIn('передній', result)
 
     def test_seal_synonyms(self):
@@ -201,7 +208,7 @@ class TestAutomotiveSynonyms(unittest.TestCase):
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
         self.assertIn('сальник', result)
-        self.assertIn('uszczelniacz', result, "Should include Polish variant")
+        self.assertNotIn('uszczelniacz', result, "Polish variants should be excluded")
 
 
 class TestTechnicalAbbreviations(unittest.TestCase):
@@ -248,7 +255,7 @@ class TestTechnicalAbbreviations(unittest.TestCase):
 
 
 class TestPolishTranslations(unittest.TestCase):
-    """Test Polish language support"""
+    """Ensure Polish language terms are excluded"""
 
     def setUp(self):
         clear_cache()
@@ -258,8 +265,7 @@ class TestPolishTranslations(unittest.TestCase):
         query: str = "тормозна колодка"
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
-        # тормозна expands to тормоз, колодка has Polish variant кlocek (Cyrillic к + Latin locek)
-        self.assertIn('кlocek', result, "Should include Polish brake pad term")
+        self.assertNotIn('кlocek', result, "Polish brake pad term should be excluded")
         self.assertIn('тормоз', result)
 
     def test_filter_polish(self):
@@ -267,22 +273,22 @@ class TestPolishTranslations(unittest.TestCase):
         query: str = "фільтр"
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
-        self.assertIn('filtr', result, "Should include Polish filter term")
-        self.assertIn('wkład', result, "Should include Polish insert term")
+        self.assertNotIn('filtr', result, "Polish filter term should be excluded")
+        self.assertNotIn('wkład', result, "Polish insert term should be excluded")
 
     def test_fastener_polish(self):
         """Test Polish fastener terms"""
         query: str = "гвинт"
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
-        self.assertIn('śruba', result, "Should include Polish screw term")
+        self.assertNotIn('śruba', result, "Polish screw term should be excluded")
 
     def test_mounting_polish(self):
         """Test Polish mounting terms"""
         query: str = "кріплення"
         result: Set[str] = set(normalize_query(query, expand_cases=True))
 
-        self.assertIn('mocowanie', result, "Should include Polish mounting term")
+        self.assertNotIn('mocowanie', result, "Polish mounting term should be excluded")
 
 
 class TestCachePerformance(unittest.TestCase):
@@ -435,7 +441,7 @@ class TestIntegrationScenarios(unittest.TestCase):
 
         # Should contain brake pad terms
         self.assertIn('колодка', result)
-        self.assertIn('кlocek', result, "Should include Polish brake pad variant")
+        self.assertNotIn('кlocek', result, "Polish brake pad variant should be excluded")
 
         # Should expand gальмівна forms
         brake_adj_forms: Set[str] = {'гальмівний', 'гальмівна', 'гальмівн'}
@@ -459,8 +465,8 @@ class TestIntegrationScenarios(unittest.TestCase):
         self.assertIn('масляний', result)
 
         # Should expand to other languages
-        self.assertIn('filtr', result)  # Polish
-        self.assertIn('oleju', result)  # Polish oil
+        self.assertNotIn('filtr', result)  # Polish
+        self.assertNotIn('oleju', result)  # Polish oil
 
         # Should recognize manufacturer
         self.assertIn('scania', result)
