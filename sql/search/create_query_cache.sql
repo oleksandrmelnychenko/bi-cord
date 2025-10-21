@@ -63,13 +63,4 @@ CREATE TRIGGER trigger_update_query_embeddings_updated_at
 
 -- Sample queries for initial cache warming (optional)
 -- Uncomment and modify based on your actual popular queries
-/*
-INSERT INTO analytics_features.query_embeddings (query_text, query_language)
-VALUES
-    ('тормозные колодки', 'ukrainian'),
-    ('brake pads', 'english'),
-    ('гвинт кріплення', 'ukrainian'),
-    ('масляный фильтр', 'russian'),
-    ('амортизатор', 'russian')
-ON CONFLICT (query_text) DO NOTHING;
-*/
+

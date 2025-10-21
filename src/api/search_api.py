@@ -37,7 +37,8 @@ app = FastAPI(
 
 # Global keyword cache (loaded from database on startup)
 DYNAMIC_KEYWORDS: Dict[str, List[str]] = {
-    "ukrainian": []
+    "ukrainian": [],
+    "polish": []
 }
 
 # CORS middleware
@@ -551,18 +552,24 @@ async def startup_event():
             rows = cursor.fetchall()
 
             ukrainian_keywords: List[str] = []
+            polish_keywords: List[str] = []
 
             for row in rows:
                 if row['language'] == 'ukrainian':
                     ukrainian_keywords.append(row['keyword'])
+                elif row['language'] == 'polish':
+                    polish_keywords.append(row['keyword'])
 
             DYNAMIC_KEYWORDS['ukrainian'] = ukrainian_keywords
+            DYNAMIC_KEYWORDS['polish'] = polish_keywords
 
             logger.info(f"✅ Loaded {len(ukrainian_keywords)} Ukrainian keywords")
+            logger.info(f"✅ Loaded {len(polish_keywords)} Polish keywords (for exclusion)")
 
     except Exception as e:
         logger.warning(f"Failed to load dynamic keywords: {e}. Using fallback classification.")
         DYNAMIC_KEYWORDS['ukrainian'] = []
+        DYNAMIC_KEYWORDS['polish'] = []
 
 
 @app.on_event("shutdown")

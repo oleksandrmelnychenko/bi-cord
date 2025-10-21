@@ -138,28 +138,105 @@ def load_queries_from_file(file_path: str) -> List[str]:
     return queries
 
 
-def classify_query_language(query: str) -> str:
+def load_polish_keywords_from_db() -> set:
     """
-    Simple language classification based on character set
+    Load Polish keywords from database product_keyword_cache table
+
+    Returns:
+        Set of Polish words extracted from product polish_name column
+    """
+    try:
+        with get_postgres_connection() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT keyword
+                FROM analytics_features.product_keyword_cache
+                WHERE language = 'polish'
+                    AND frequency >= 10
+                ORDER BY frequency DESC
+            """)
+
+            rows = cursor.fetchall()
+            polish_keywords = {row[0].lower() for row in rows if row[0]}
+
+            print(f"Loaded {len(polish_keywords):,} Polish keywords from database for exclusion")
+            return polish_keywords
+
+    except Exception as e:
+        print(f"Warning: Could not load Polish keywords from database: {e}")
+        print("Falling back to character-based Polish detection only")
+        return set()
+
+
+# Global Polish keywords cache (loaded from database)
+_POLISH_KEYWORDS_CACHE: Optional[set] = None
+
+
+def classify_query_language(query: str, polish_keywords: Optional[set] = None) -> str:
+    """
+    Enhanced language classification based on character set and database-driven Polish keywords
+
+    Detects and excludes Polish queries by checking against Polish words
+    extracted from the product polish_name column
 
     Args:
         query: Query text
+        polish_keywords: Optional set of Polish words (loaded from DB), if None will load automatically
 
     Returns:
-        Language code: 'ukrainian', 'russian', 'english', or 'unknown'
+        Language code: 'ukrainian', 'russian', 'polish', 'english', or 'unknown'
     """
-    cyrillic_ukrainian = set('іїєґІЇЄҐ')
-    cyrillic_general = set('абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
-    query_chars = set(query.lower())
+    global _POLISH_KEYWORDS_CACHE
 
-    if any(char in query_chars for char in cyrillic_ukrainian):
+    # Polish-specific characters (ą, ć, ę, ł, ń, ó, ś, ź, ż)
+    polish_chars = set('ąćęłńóśźżĄĆĘŁŃÓŚŹŻ')
+
+    # Ukrainian-specific characters (і, ї, є, ґ)
+    ukrainian_chars = set('іїєґІЇЄҐ')
+
+    # General Cyrillic (shared by Russian, Ukrainian, Belarusian, etc.)
+    cyrillic_general = set('абвгдежзийклмнопрстуфхцчшщъыьэюяАБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ')
+
+    # Russian-specific character (ы - not used in Ukrainian)
+    russian_specific = set('ыъэЫЪЭ')
+
+    # Load Polish keywords from database if not provided
+    if polish_keywords is None:
+        if _POLISH_KEYWORDS_CACHE is None:
+            _POLISH_KEYWORDS_CACHE = load_polish_keywords_from_db()
+        polish_keywords = _POLISH_KEYWORDS_CACHE
+
+    query_lower = query.lower()
+    query_chars = set(query_lower)
+    query_words = query_lower.split()
+
+    # Check for Polish special characters first (highest priority)
+    if any(char in query_chars for char in polish_chars):
+        return 'polish'
+
+    # Check for Polish words from database (dynamic, comprehensive)
+    if polish_keywords and any(word in polish_keywords for word in query_words):
+        return 'polish'
+
+    # Check for Ukrainian-specific characters
+    if any(char in query_chars for char in ukrainian_chars):
         return 'ukrainian'
-    elif any(char in query_chars for char in cyrillic_general):
+
+    # Check for Russian-specific characters
+    if any(char in query_chars for char in russian_specific):
         return 'russian'
-    elif query.isascii():
+
+    # If contains general Cyrillic but no language-specific markers,
+    # default to Ukrainian (our primary language)
+    if any(char in query_chars for char in cyrillic_general):
+        return 'ukrainian'
+
+    # ASCII-only text
+    if query.isascii() and len(query.strip()) > 0:
         return 'english'
-    else:
-        return 'unknown'
+
+    return 'unknown'
 
 
 def upsert_query_embeddings_batch(
@@ -170,6 +247,8 @@ def upsert_query_embeddings_batch(
     """
     Upsert query embeddings into cache table in batch
 
+    Filters out Polish and other excluded languages before inserting
+
     Args:
         queries: List of query texts
         embeddings: List of embedding vectors
@@ -178,30 +257,46 @@ def upsert_query_embeddings_batch(
     if not queries:
         return
 
+    # Excluded languages (Polish and others we don't want to cache)
+    excluded_languages = {'polish', 'unknown'}
+
     with get_postgres_connection() as conn:
         cursor = conn.cursor()
 
         rows = []
+        skipped_count = 0
+
         for query, embedding in zip(queries, embeddings):
             language = classify_query_language(query)
+
+            # Skip Polish and unknown language queries
+            if language in excluded_languages:
+                skipped_count += 1
+                print(f"  SKIPPING {language.upper()} query: '{query[:50]}...'")
+                continue
+
             embedding_str = f"[{','.join(map(str, embedding))}]"
             rows.append((query, embedding_str, language))
 
-        execute_values(
-            cursor,
-            """
-            INSERT INTO analytics_features.query_embeddings (query_text, embedding, query_language)
-            VALUES %s
-            ON CONFLICT (query_text) DO UPDATE SET
-                embedding = EXCLUDED.embedding,
-                query_language = EXCLUDED.query_language,
-                updated_at = NOW()
-            """,
-            rows,
-            template="(%s, %s::vector, %s)"
-        )
+        if rows:
+            execute_values(
+                cursor,
+                """
+                INSERT INTO analytics_features.query_embeddings (query_text, embedding, query_language)
+                VALUES %s
+                ON CONFLICT (query_text) DO UPDATE SET
+                    embedding = EXCLUDED.embedding,
+                    query_language = EXCLUDED.query_language,
+                    updated_at = NOW()
+                """,
+                rows,
+                template="(%s, %s::vector, %s)"
+            )
 
-        stats.queries_inserted += len(rows)
+            stats.queries_inserted += len(rows)
+
+        if skipped_count > 0:
+            print(f"  Skipped {skipped_count} excluded language queries")
 
 
 def run_cache_loader(

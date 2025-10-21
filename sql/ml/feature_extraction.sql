@@ -15,24 +15,20 @@ SELECT
     p.net_uid,
 
     -- Combined multilingual text for embedding (384-dimensional vector)
+    -- EXCLUDING POLISH FIELDS - Ukrainian and English only
     CONCAT_WS(' | ',
-        -- Base language fields
+        -- Base language fields (English/International)
         COALESCE(p.name, ''),
         COALESCE(p.description, ''),
         COALESCE(p.vendor_code, ''),
         COALESCE(p.main_original_number, ''),
 
-        -- Polish language fields
-        COALESCE(p.polish_name, ''),
-        COALESCE(p.polish_description, ''),
-
-        -- Ukrainian language fields
+        -- Ukrainian language fields ONLY (no Polish)
         COALESCE(p.ukrainian_name, ''),
         COALESCE(p.ukrainian_description, ''),
 
-        -- Search-optimized fields
+        -- Search-optimized fields (Ukrainian only, excluding Polish)
         COALESCE(p.search_name, ''),
-        COALESCE(p.search_polish_name, ''),
         COALESCE(p.search_ukrainian_name, ''),
 
         -- Additional context
@@ -41,17 +37,17 @@ SELECT
         COALESCE(p.standard, '')
     ) AS combined_text,
 
-    -- Character count for quality metrics
+    -- Character count for quality metrics (Ukrainian and English only)
     LENGTH(CONCAT_WS(' | ',
         COALESCE(p.name, ''),
         COALESCE(p.description, ''),
-        COALESCE(p.polish_name, ''),
-        COALESCE(p.ukrainian_name, '')
+        COALESCE(p.ukrainian_name, ''),
+        COALESCE(p.ukrainian_description, '')
     )) AS text_length,
 
-    -- Language completeness flags
-    (p.polish_name IS NOT NULL AND p.polish_description IS NOT NULL) AS has_polish,
+    -- Language completeness flags (Ukrainian only, Polish excluded)
     (p.ukrainian_name IS NOT NULL AND p.ukrainian_description IS NOT NULL) AS has_ukrainian,
+    (p.name IS NOT NULL AND p.description IS NOT NULL) AS has_english,
 
     p.created,
     p.updated
@@ -146,16 +142,14 @@ SELECT
         ELSE 0.2
     END AS recency_score,
 
-    -- Data completeness score (0-1)
+    -- Data completeness score (0-1) - EXCLUDING POLISH FIELDS
     (
-        CASE WHEN p.name IS NOT NULL THEN 0.15 ELSE 0 END +
-        CASE WHEN p.description IS NOT NULL THEN 0.15 ELSE 0 END +
-        CASE WHEN p.polish_name IS NOT NULL THEN 0.1 ELSE 0 END +
-        CASE WHEN p.polish_description IS NOT NULL THEN 0.1 ELSE 0 END +
-        CASE WHEN p.ukrainian_name IS NOT NULL THEN 0.1 ELSE 0 END +
-        CASE WHEN p.ukrainian_description IS NOT NULL THEN 0.1 ELSE 0 END +
-        CASE WHEN p.weight > 0 THEN 0.1 ELSE 0 END +
-        CASE WHEN p.has_image THEN 0.1 ELSE 0 END +
+        CASE WHEN p.name IS NOT NULL THEN 0.20 ELSE 0 END +
+        CASE WHEN p.description IS NOT NULL THEN 0.20 ELSE 0 END +
+        CASE WHEN p.ukrainian_name IS NOT NULL THEN 0.15 ELSE 0 END +
+        CASE WHEN p.ukrainian_description IS NOT NULL THEN 0.15 ELSE 0 END +
+        CASE WHEN p.weight > 0 THEN 0.10 ELSE 0 END +
+        CASE WHEN p.has_image THEN 0.10 ELSE 0 END +
         CASE WHEN p.has_analogue THEN 0.05 ELSE 0 END +
         CASE WHEN p.is_for_sale THEN 0.05 ELSE 0 END
     ) AS completeness_score,
@@ -183,11 +177,11 @@ SELECT
     p.name,
     p.supplier_name,
 
-    -- Text features
+    -- Text features (Ukrainian and English only, Polish excluded)
     t.combined_text,
     t.text_length,
-    t.has_polish,
     t.has_ukrainian,
+    t.has_english,
 
     -- Categorical features
     c.supplier_code,
@@ -234,13 +228,11 @@ SELECT
     COUNT(CASE WHEN name IS NOT NULL AND LENGTH(name) > 5 THEN 1 END) AS has_valid_name,
     COUNT(CASE WHEN description IS NOT NULL AND LENGTH(description) > 10 THEN 1 END) AS has_valid_description,
 
-    -- Multilingual coverage
-    COUNT(CASE WHEN polish_name IS NOT NULL THEN 1 END) AS has_polish_name,
+    -- Multilingual coverage (Ukrainian only, Polish excluded)
     COUNT(CASE WHEN ukrainian_name IS NOT NULL THEN 1 END) AS has_ukrainian_name,
 
-    -- Search field optimization
+    -- Search field optimization (Ukrainian only)
     COUNT(CASE WHEN search_name IS NOT NULL THEN 1 END) AS has_search_name,
-    COUNT(CASE WHEN search_polish_name IS NOT NULL THEN 1 END) AS has_search_polish_name,
     COUNT(CASE WHEN search_ukrainian_name IS NOT NULL THEN 1 END) AS has_search_ukrainian_name,
 
     -- Business flags
@@ -249,9 +241,8 @@ SELECT
     COUNT(CASE WHEN has_image THEN 1 END) AS products_with_images,
     COUNT(CASE WHEN has_analogue THEN 1 END) AS products_with_analogues,
 
-    -- Quality percentages
+    -- Quality percentages (Polish excluded)
     ROUND(100.0 * COUNT(CASE WHEN name IS NOT NULL AND LENGTH(name) > 5 THEN 1 END) / COUNT(*), 2) AS pct_valid_name,
-    ROUND(100.0 * COUNT(CASE WHEN polish_name IS NOT NULL THEN 1 END) / COUNT(*), 2) AS pct_polish,
     ROUND(100.0 * COUNT(CASE WHEN ukrainian_name IS NOT NULL THEN 1 END) / COUNT(*), 2) AS pct_ukrainian
 
 FROM staging_marts.dim_product
@@ -273,10 +264,10 @@ COMMENT ON VIEW analytics_features.search_quality_metrics IS
 -- WHERE completeness_score > 0.8
 -- ORDER BY recency_score DESC, completeness_score DESC LIMIT 20;
 
--- Example 3: Find products needing multilingual enrichment
--- SELECT product_id, vendor_code, name, has_polish, has_ukrainian
+-- Example 3: Find products needing Ukrainian translation
+-- SELECT product_id, vendor_code, name, has_ukrainian, has_english
 -- FROM analytics_features.product_text_features
--- WHERE NOT has_polish OR NOT has_ukrainian
+-- WHERE NOT has_ukrainian
 -- ORDER BY product_id LIMIT 100;
 
 -- Example 4: Monitor search quality metrics
