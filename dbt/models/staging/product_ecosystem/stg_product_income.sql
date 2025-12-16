@@ -22,7 +22,6 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'UserID')::bigint as user_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'StorageID')::bigint as storage_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'Comment')::text as comment,
         (cdc_payload->'payload'->'after'->>'ProductIncomeType')::integer as product_income_type,
         (cdc_payload->'payload'->'after'->>'IsHide')::boolean as is_hide,
@@ -44,7 +43,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

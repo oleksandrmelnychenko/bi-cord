@@ -4,9 +4,9 @@
     schema='marts',
     indexes=[
       {'columns': ['product_id'], 'unique': True},
-      {'columns': ['search_name'], 'type': 'gin', 'operator': 'gin_trgm_ops'},
+      {'columns': ['search_name']},
       {'columns': ['search_vendor_code']},
-      {'columns': ['original_numbers'], 'type': 'gin'},
+      {'columns': ['original_number_ids'], 'type': 'gin'},
       {'columns': ['is_available']},
       {'columns': ['total_available_amount']}
     ]

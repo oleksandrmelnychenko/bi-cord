@@ -17,6 +17,7 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'MinAvailabilityUA')::numeric as min_availability_u_a,
         (cdc_payload->'payload'->'after'->>'MaxAvailabilityUA')::numeric as max_availability_u_a,
         (cdc_payload->'payload'->'after'->>'MinAvailabilityPL')::numeric as min_availability_p_l,
+        (cdc_payload->'payload'->'after'->>'Deleted')::boolean as deleted,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
         (cdc_payload->'payload'->'source'->>'ts_ms')::bigint as source_ts_ms,
@@ -34,7 +35,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

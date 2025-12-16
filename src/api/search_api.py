@@ -37,8 +37,7 @@ app = FastAPI(
 
 # Global keyword cache (loaded from database on startup)
 DYNAMIC_KEYWORDS: Dict[str, List[str]] = {
-    "ukrainian": [],
-    "polish": []
+    "ukrainian": []
 }
 
 # CORS middleware
@@ -74,20 +73,33 @@ db_pool: Optional[SimpleConnectionPool] = None
 # ============================================================================
 
 class SearchRequest(BaseModel):
-    """Unified request model for adaptive product search"""
-    query: str = Field(..., description="Natural language search query", min_length=1, max_length=500)
-    supplier_name: Optional[str] = Field(None, description="Filter by supplier name (e.g., 'SEM1', 'SABO')")
-    weight_min: Optional[float] = Field(None, description="Minimum product weight in kg", ge=0)
-    weight_max: Optional[float] = Field(None, description="Maximum product weight in kg", ge=0)
-    is_for_sale: Optional[bool] = Field(None, description="Filter by for_sale status")
-    is_for_web: Optional[bool] = Field(None, description="Filter by web availability")
-    has_image: Optional[bool] = Field(None, description="Filter by image availability")
-    limit: int = Field(20, description="Maximum number of results", ge=1, le=100)
-    offset: int = Field(0, description="Number of leading results to skip", ge=0)
-    weight_preset: Optional[str] = Field(
-        None,
-        description="Ranking weight preset override: balanced, exact_priority, semantic_priority, popularity_priority"
+    """Universal request model for all search-related operations"""
+
+    # Action selector
+    action: str = Field(
+        "search",
+        description="Operation type: 'search' (product search), 'track_click' (log click), 'feedback' (submit feedback)"
     )
+
+    # Search-specific fields (for action='search')
+    query: Optional[str] = Field(None, description="Natural language search query", min_length=1, max_length=500)
+
+    # Click tracking fields (for action='track_click')
+    search_id: Optional[int] = Field(None, description="ID of the search query from search_query_log")
+    clicked_product_id: Optional[int] = Field(None, description="ID of the clicked product")
+    rank_position: Optional[int] = Field(None, description="Position of product in search results (1-indexed)")
+
+    # Feedback fields (for action='feedback')
+    feedback_type: Optional[str] = Field(None, description="Type of feedback")
+    feedback_comment: Optional[str] = Field(None, description="Optional user comment", max_length=500)
+
+    class Config:
+        # Provide example for Swagger UI
+        json_schema_extra = {
+            "example": {
+                "query": "тяга"
+            }
+        }
 
 
 class ProductResult(BaseModel):
@@ -98,6 +110,7 @@ class ProductResult(BaseModel):
     ukrainian_name: Optional[str]
     main_original_number: Optional[str]
     supplier_name: Optional[str]
+    size: Optional[str] = None
     weight: Optional[float]
     is_for_sale: Optional[bool]
     is_for_web: Optional[bool]
@@ -116,96 +129,40 @@ class ProductResult(BaseModel):
 
 
 class SearchResponse(BaseModel):
-    """Response model for search results"""
-    query: str
-    total_results: int
+    """Universal response model for all search-related operations"""
+
+    # Universal fields
+    action: str  # Echo back the action type
+    success: bool = True
     execution_time_ms: float
-    results: List[ProductResult]
-    search_id: Optional[int] = None  # Added for click tracking
+    message: Optional[str] = None
 
+    # Search-specific fields (for action='search')
+    query: Optional[str] = None
+    total_results: Optional[int] = None
+    results: Optional[List[ProductResult]] = None
+    search_id: Optional[int] = None
 
-class ClickTrackingRequest(BaseModel):
-    """Request model for click tracking"""
-    search_id: int = Field(..., description="ID of the search query from search_query_log")
-    product_id: int = Field(..., description="ID of the clicked product")
-    rank_position: int = Field(..., description="Position of product in search results (1-indexed)", ge=1)
-    click_timestamp: Optional[str] = Field(None, description="ISO timestamp of click (server-side if not provided)")
-
-
-class FeedbackRequest(BaseModel):
-    """Request model for search feedback"""
-    search_id: int = Field(..., description="ID of the search query")
-    feedback_type: str = Field(..., description="Type of feedback: 'helpful', 'not_helpful', 'no_results', 'irrelevant'")
-    comment: Optional[str] = Field(None, description="Optional user comment", max_length=500)
-
-
-class ClickTrackingResponse(BaseModel):
-    """Response model for click tracking"""
-    success: bool
-    message: str
+    # Click tracking fields (for action='track_click')
     click_id: Optional[int] = None
-
-
-class FeedbackResponse(BaseModel):
-    """Response model for feedback submission"""
-    success: bool
-    message: str
 
 
 @dataclass
 class SearchFilters:
-    supplier_name: Optional[str] = None
-    weight_min: Optional[float] = None
-    weight_max: Optional[float] = None
-    is_for_sale: Optional[bool] = None
-    is_for_web: Optional[bool] = None
-    has_image: Optional[bool] = None
-    vendor_code_query: Optional[str] = None
+    # No filters - search parses query only
+    pass
 
 
 def _build_filter_clause(filters: Optional[SearchFilters], alias: str = "p") -> Tuple[str, List[Any]]:
-    clauses: List[str] = []
-    params: List[Any] = []
-
-    if filters is None:
-        return "", params
-
-    if filters.supplier_name:
-        clauses.append(f"{alias}.supplier_name = %s")
-        params.append(filters.supplier_name)
-
-    if filters.weight_min is not None:
-        clauses.append(f"{alias}.weight >= %s")
-        params.append(filters.weight_min)
-
-    if filters.weight_max is not None:
-        clauses.append(f"({alias}.weight <= %s)")
-        params.append(filters.weight_max)
-
-    if filters.is_for_sale is not None:
-        clauses.append(f"{alias}.is_for_sale = %s")
-        params.append(filters.is_for_sale)
-
-    if filters.is_for_web is not None:
-        clauses.append(f"{alias}.is_for_web = %s")
-        params.append(filters.is_for_web)
-
-    if filters.has_image is not None:
-        clauses.append(f"{alias}.has_image = %s")
-        params.append(filters.has_image)
-
-    if filters.vendor_code_query:
-        clauses.append(f"{alias}.vendor_code ILIKE %s")
-        params.append(f"%{filters.vendor_code_query}%")
-
-    if not clauses:
-        return "", params
-
-    return " AND " + " AND ".join(clauses), params
+    # No filters - query-only search
+    return "", []
 
 
+# New simplified search SQL template based on business requirements
+# No ML/vector search, no expensive trigram calculations
+# Smart multi-term matching with normalized code search
 UNIFIED_SEARCH_SQL_TEMPLATE = """
-WITH filtered_products AS (
+WITH matched_products AS (
     SELECT
         p.product_id,
         p.vendor_code,
@@ -213,135 +170,55 @@ WITH filtered_products AS (
         p.ukrainian_name,
         p.main_original_number,
         p.supplier_name,
+        p.size,
+        p.description,
         p.weight,
         p.is_for_sale,
         p.is_for_web,
         p.has_image,
         p.has_analogue,
-        p.search_vector,
         p.created,
-        p.updated
+        p.updated,
+        p.total_available_amount,
+        p.storage_count,
+        p.original_number_ids,
+        p.analogue_product_ids,
+        p.availability_score,
+        p.freshness_score,
+        p.normalized_vendor_code,
+        p.normalized_original_number,
+        -- Match counting for scoring (all terms treated equally)
+        (
+            -- All term matches from multi-term conditions
+            {multi_term_conditions}
+            -- Exact matches bonus
+            CASE WHEN LOWER(p.vendor_code) = LOWER(%s) THEN 15 ELSE 0 END +
+            CASE WHEN LOWER(p.name) = LOWER(%s) THEN 12 ELSE 0 END
+        ) AS match_score
     FROM staging_marts.dim_product p
-    WHERE p.deleted = false {filter_clause}
-),
-vector_candidates AS (
-    SELECT
-        fp.product_id,
-        1 - (e.embedding <=> %s::vector) AS vector_score,
-        0.0::float AS fulltext_score,
-        0.0::float AS trigram_score,
-        0.0::float AS exact_score
-    FROM filtered_products fp
-    JOIN analytics_features.product_embeddings e ON e.product_id = fp.product_id
-    ORDER BY e.embedding <=> %s::vector
-    LIMIT %s
-),
-fulltext_candidates AS (
-    SELECT
-        fp.product_id,
-        0.0 AS vector_score,
-        ts_rank_cd(fp.search_vector, plainto_tsquery('simple', %s)) AS fulltext_score,
-        0.0 AS trigram_score,
-        0.0 AS exact_score
-    FROM filtered_products fp
-    WHERE fp.search_vector @@ plainto_tsquery('simple', %s)
-    ORDER BY fulltext_score DESC
-    LIMIT %s
-),
-trigram_candidates AS (
-    SELECT
-        fp.product_id,
-        0.0 AS vector_score,
-        0.0 AS fulltext_score,
-        GREATEST(
-            similarity(fp.vendor_code, %s),
-            similarity(fp.name, %s),
-            similarity(fp.ukrainian_name, %s),
-            similarity(COALESCE(fp.main_original_number, ''), %s)
-        ) AS trigram_score,
-        0.0 AS exact_score
-    FROM filtered_products fp
-    ORDER BY trigram_score DESC
-    LIMIT %s
-),
-exact_candidates AS (
-    SELECT
-        fp.product_id,
-        0.0 AS vector_score,
-        0.0 AS fulltext_score,
-        0.0 AS trigram_score,
-        GREATEST(
-            CASE WHEN fp.vendor_code ILIKE %s THEN 1.0 ELSE 0.0 END,
-            CASE WHEN fp.name ILIKE %s THEN 0.95 ELSE 0.0 END,
-            CASE WHEN fp.ukrainian_name ILIKE %s THEN 0.90 ELSE 0.0 END,
-            CASE WHEN LOWER(COALESCE(fp.main_original_number,'')) = LOWER(%s) THEN 1.0 ELSE 0.0 END
-        ) AS exact_score
-    FROM filtered_products fp
-    ORDER BY exact_score DESC
-    LIMIT %s
-),
-unioned AS (
-    SELECT * FROM vector_candidates
-    UNION ALL
-    SELECT * FROM fulltext_candidates
-    UNION ALL
-    SELECT * FROM trigram_candidates
-    UNION ALL
-    SELECT * FROM exact_candidates
-),
-aggregated AS (
-    SELECT
-        u.product_id,
-        MAX(u.vector_score) AS vector_score,
-        MAX(u.fulltext_score) AS fulltext_score,
-        MAX(u.trigram_score) AS trigram_score,
-        MAX(u.exact_score) AS exact_score
-    FROM unioned u
-    GROUP BY u.product_id
-),
-features AS (
-    SELECT
-        agg.product_id,
-        agg.vector_score,
-        agg.fulltext_score,
-        agg.trigram_score,
-        agg.exact_score,
-        fp.vendor_code,
-        fp.name,
-        fp.ukrainian_name,
-        fp.main_original_number,
-        fp.supplier_name,
-        fp.weight,
-        fp.is_for_sale,
-        fp.is_for_web,
-        fp.has_image,
-        fp.has_analogue,
-        fp.created,
-        fp.updated,
-        COALESCE(pop.popularity_score, 0.0) AS popularity_score,
-        COALESCE(pop.click_count, 0) AS click_count,
-        COALESCE(pop.view_count, 0) AS view_count,
-        COALESCE(pop.conversion_count, 0) AS conversion_count
-    FROM aggregated agg
-    JOIN filtered_products fp ON fp.product_id = agg.product_id
-    LEFT JOIN analytics_features.product_popularity_scores pop ON pop.product_id = agg.product_id
+    WHERE 1=1
+        {multi_term_where}
 ),
 scored AS (
     SELECT
-        f.*,
-        (%s * f.vector_score) +
-        (%s * f.fulltext_score) +
-        (%s * f.trigram_score) +
-        (%s * f.exact_score) +
-        (%s * f.popularity_score) +
-        (%s * (
-            CASE WHEN f.is_for_sale THEN 0.4 ELSE 0 END +
-            CASE WHEN f.is_for_web THEN 0.3 ELSE 0 END +
-            CASE WHEN f.has_image THEN 0.3 ELSE 0 END
-        )) +
-        (%s * LEAST(GREATEST(1.0 - (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(f.updated, f.created))) / 86400.0) / 365.0, -1.0), 1.0))
-        AS final_score
-    FROM features f
+        mp.*,
+        COALESCE(pop.popularity_score, 0.0) AS popularity_score,
+        COALESCE(pop.click_count, 0) AS click_count,
+        COALESCE(pop.view_count, 0) AS view_count,
+        COALESCE(pop.conversion_count, 0) AS conversion_count,
+        -- Final score calculation
+        (
+            mp.match_score * 10.0 +
+            COALESCE(pop.popularity_score, 0.0) * 2.0 +
+            (CASE WHEN mp.is_for_sale THEN 1.0 ELSE 0 END) +
+            (CASE WHEN mp.is_for_web THEN 0.8 ELSE 0 END) +
+            (CASE WHEN mp.has_image THEN 0.6 ELSE 0 END) +
+            -- Freshness score
+            LEAST(GREATEST(1.0 - (EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - COALESCE(mp.updated, mp.created))) / 86400.0) / 365.0, 0.0), 1.0) * 0.5
+        ) AS final_score
+    FROM matched_products mp
+    LEFT JOIN analytics_features.product_popularity_scores pop ON pop.product_id = mp.product_id
+    WHERE mp.match_score > 0
 )
 SELECT
     scored.product_id,
@@ -350,15 +227,19 @@ SELECT
     scored.ukrainian_name,
     scored.main_original_number,
     scored.supplier_name,
+    scored.size,
     scored.weight,
     scored.is_for_sale,
     scored.is_for_web,
     scored.has_image,
     scored.has_analogue,
-    scored.vector_score,
-    scored.fulltext_score,
-    scored.trigram_score,
-    scored.exact_score,
+    scored.total_available_amount,
+    scored.storage_count,
+    scored.original_number_ids,
+    scored.analogue_product_ids,
+    scored.availability_score,
+    scored.freshness_score,
+    scored.match_score,
     scored.popularity_score,
     scored.click_count,
     scored.view_count,
@@ -373,57 +254,123 @@ LIMIT %s OFFSET %s
 
 def _execute_unified_search(
     query_text: str,
-    embedding_vector: List[float],
+    embedding_vector: List[float],  # Not used in new implementation
     filters: Optional[SearchFilters],
-    ranking_weights: RankingWeights,
+    ranking_weights: RankingWeights,  # Not used in new implementation
     fetch_limit: int,
     result_limit: int,
     result_offset: int,
     restrict_product_ids: Optional[List[int]] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
-    embedding_str = format_embedding_for_postgres(embedding_vector)
+    """
+    Execute smart text-based search using query preprocessing and normalized fields
+    """
+    # Preprocess query to extract terms and generate variants
+    processed = preprocess_search_query(query_text)
 
-    filter_clause, filter_params = _build_filter_clause(filters)
-    if restrict_product_ids:
-        filter_clause += (" AND " if filter_clause else " AND ") + "p.product_id = ANY(%s)"
-        filter_params.append(restrict_product_ids)
+    # Build WHERE clause and CASE conditions for ALL terms equally
+    # Using parameter placeholders instead of string injection
+    multi_term_where = ""
+    multi_term_conditions = ""
+    all_term_params = []
+    score_params = []
 
-    sql = UNIFIED_SEARCH_SQL_TEMPLATE.format(filter_clause=filter_clause)
+    if len(processed.terms) >= 1:
+        # Combined search: ALL terms search ALL fields equally
+        # Example: "Втулка 082564" finds products where:
+        # - "Втулка" matches ANY field (name, code, size, description)
+        # - AND "082564" matches ANY field
 
-    ts_query_input = query_text
-    search_pattern = f"%{query_text}%"
+        # Build WHERE clause with parameter placeholders for all terms
+        term_conditions = []
+        term_score_conditions = []
 
-    vector_limit = fetch_limit if ranking_weights.vector_similarity > 0 else 0
-    fulltext_limit = fetch_limit
-    trigram_limit = fetch_limit
-    exact_limit = fetch_limit
+        for idx, term in enumerate(processed.terms):
+            # Generate both Latin 'x' and Cyrillic 'х' variants
+            # This handles size patterns like "72х56" or "72x56"
+            term_variants = []
+            if 'x' in term.lower() or 'х' in term.lower():
+                # Create both variants
+                latin_term = term.replace('х', 'x').replace('Х', 'X')
+                cyrillic_term = term.replace('x', 'х').replace('X', 'Х')
+                term_variants = [latin_term, cyrillic_term]
+            else:
+                term_variants = [term]
 
+            # Build OR conditions for all term variants across all fields
+            field_conditions = []
+            for variant in term_variants:
+                pattern = f"%{variant}%"
+                field_conditions.extend([
+                    "p.vendor_code ILIKE %s",
+                    "p.main_original_number ILIKE %s",
+                    "p.name ILIKE %s",
+                    "p.ukrainian_name ILIKE %s",
+                    "p.size ILIKE %s",
+                    "p.description ILIKE %s"
+                ])
+                all_term_params.extend([pattern] * 6)
+
+            term_conditions.append("(" + " OR ".join(field_conditions) + ")")
+
+            # Build scoring conditions for this term
+            # Scoring: vendor_code=9, original_number=8, name=7, size=6, description=5
+            for variant in term_variants:
+                pattern = f"%{variant}%"
+
+                term_score_conditions.append("CASE WHEN p.vendor_code ILIKE %s THEN 9 ELSE 0 END")
+                score_params.append(pattern)
+
+                term_score_conditions.append("CASE WHEN p.main_original_number ILIKE %s THEN 8 ELSE 0 END")
+                score_params.append(pattern)
+
+                term_score_conditions.append("CASE WHEN p.name ILIKE %s THEN 7 ELSE 0 END")
+                score_params.append(pattern)
+
+                term_score_conditions.append("CASE WHEN p.ukrainian_name ILIKE %s THEN 7 ELSE 0 END")
+                score_params.append(pattern)
+
+                term_score_conditions.append("CASE WHEN p.size ILIKE %s THEN 6 ELSE 0 END")
+                score_params.append(pattern)
+
+                term_score_conditions.append("CASE WHEN p.description ILIKE %s THEN 5 ELSE 0 END")
+                score_params.append(pattern)
+
+        if term_conditions:
+            # Use AND between all term conditions (all must match)
+            multi_term_where = "AND (" + " AND ".join(term_conditions) + ")"
+
+        if term_score_conditions:
+            multi_term_conditions = " + ".join(term_score_conditions) + " +"
+
+    # Build SQL with multi-term placeholders
+    sql = UNIFIED_SEARCH_SQL_TEMPLATE.format(
+        multi_term_where=multi_term_where,
+        multi_term_conditions=multi_term_conditions
+    )
+
+    # Check if we have any terms
+    if not processed.terms:
+        # If preprocessing failed or query is invalid, return empty results
+        return [], 0
+
+    # Build parameters list (same structure for single and multi-term queries)
     params: List[Any] = []
-    params.extend(filter_params)
+
+    # Scoring CASE parameters (in matched_products CTE)
+    params.extend(score_params)
+
+    # Exact match bonus parameters
     params.extend([
-        embedding_str,
-        embedding_str,
-        vector_limit,
-        ts_query_input,
-        ts_query_input,
-        fulltext_limit,
-        query_text,
-        query_text,
-        query_text,
-        query_text,
-        trigram_limit,
-        search_pattern,
-        search_pattern,
-        search_pattern,
-        query_text,
-        exact_limit,
-        ranking_weights.vector_similarity,
-        ranking_weights.fulltext,
-        ranking_weights.trigram,
-        ranking_weights.exact_match,
-        ranking_weights.popularity,
-        ranking_weights.availability,
-        ranking_weights.freshness,
+        query_text,  # LOWER(p.vendor_code) = LOWER
+        query_text,  # LOWER(p.name) = LOWER
+    ])
+
+    # WHERE clause parameters (from all_term_params)
+    params.extend(all_term_params)
+
+    # LIMIT and OFFSET
+    params.extend([
         result_limit,
         result_offset,
     ])
@@ -552,24 +499,18 @@ async def startup_event():
             rows = cursor.fetchall()
 
             ukrainian_keywords: List[str] = []
-            polish_keywords: List[str] = []
 
             for row in rows:
                 if row['language'] == 'ukrainian':
                     ukrainian_keywords.append(row['keyword'])
-                elif row['language'] == 'polish':
-                    polish_keywords.append(row['keyword'])
 
             DYNAMIC_KEYWORDS['ukrainian'] = ukrainian_keywords
-            DYNAMIC_KEYWORDS['polish'] = polish_keywords
 
             logger.info(f"✅ Loaded {len(ukrainian_keywords)} Ukrainian keywords")
-            logger.info(f"✅ Loaded {len(polish_keywords)} Polish keywords (for exclusion)")
 
     except Exception as e:
         logger.warning(f"Failed to load dynamic keywords: {e}. Using fallback classification.")
         DYNAMIC_KEYWORDS['ukrainian'] = []
-        DYNAMIC_KEYWORDS['polish'] = []
 
 
 @app.on_event("shutdown")
@@ -740,6 +681,117 @@ class QueryType(str, Enum):
     NATURAL_LANGUAGE = "natural_language"
 
 
+@dataclass
+class ProcessedQuery:
+    """Processed search query with variants and classification"""
+    original: str
+    normalized: str  # Trimmed, single spaces
+    terms: List[str]  # Split terms for multi-term search
+    normalized_variants: List[str]  # Variants without special chars
+    leading_variants: List[str]  # Variants with/without leading 0/A
+    is_multi_term: bool
+    min_length_valid: bool  # At least 4 characters
+
+
+def preprocess_search_query(query: str) -> ProcessedQuery:
+    """
+    Preprocess search query according to business requirements:
+    - Min 4 characters validation
+    - Trim and normalize whitespace
+    - Split into terms for multi-term search
+    - Generate normalized variants (no special chars)
+    - Generate leading 0/A variants for Mercedes/SAF codes
+    """
+    if not query:
+        return ProcessedQuery(
+            original="",
+            normalized="",
+            terms=[],
+            normalized_variants=[],
+            leading_variants=[],
+            is_multi_term=False,
+            min_length_valid=False
+        )
+
+    # 1. Trim and normalize whitespace
+    normalized = re.sub(r'\s+', ' ', query.strip())
+
+    # 2. Check minimum length (4 chars)
+    min_length_valid = len(normalized) >= 4
+
+    # 3. Split into terms (for multi-term search like "Втулка 72х56")
+    # Also split on 'x' and 'х' for size patterns like "72х56" -> ["72", "56"]
+    terms = normalized.split()
+
+    # Further split terms that contain 'x' or 'х' (size patterns)
+    expanded_terms = []
+    for term in terms:
+        # Split on both Latin 'x' and Cyrillic 'х'
+        if 'x' in term.lower() or 'х' in term.lower():
+            # Split on both variants
+            subterms = re.split(r'[xхXХ]', term)
+            # Only expand if we get valid numeric/alphanumeric parts
+            if len(subterms) > 1 and all(len(s.strip()) > 0 for s in subterms):
+                expanded_terms.extend([s.strip() for s in subterms if s.strip()])
+            else:
+                expanded_terms.append(term)
+        else:
+            expanded_terms.append(term)
+
+    terms = expanded_terms
+    is_multi_term = len(terms) > 1
+
+    # 4. Generate normalized variants (strip special characters)
+    normalized_variants = []
+    for term in terms:
+        # Remove dots, dashes, slashes, spaces
+        norm = re.sub(r'[.\-/\s]', '', term.upper())
+        # For 'x' character: create variants with both Latin 'x' and Cyrillic 'х'
+        # This handles size patterns like "72х56", "72x56", "72X56"
+        if 'X' in norm or 'Х' in norm:
+            # Create both variants
+            latin_variant = norm.replace('Х', 'X')
+            cyrillic_variant = norm.replace('X', 'Х')
+            if latin_variant:
+                normalized_variants.append(latin_variant)
+            if cyrillic_variant:
+                normalized_variants.append(cyrillic_variant)
+        else:
+            if norm:
+                normalized_variants.append(norm)
+
+    # 5. Generate leading 0/A variants (for Mercedes/SAF codes)
+    leading_variants = []
+    for term in terms:
+        # Only for code-like terms (alphanumeric, not pure text)
+        if re.match(r'^[A-Z0-9.\-/\s]+$', term.upper()):
+            norm = re.sub(r'[.\-/\s]', '', term.upper())
+            if norm:
+                leading_variants.append(norm)  # Original
+                leading_variants.append('0' + norm)  # With leading 0
+                leading_variants.append('A' + norm)  # With leading A
+                # Remove leading 0 if exists
+                if norm.startswith('0'):
+                    leading_variants.append(norm[1:])
+                # Remove leading A if exists
+                if norm.startswith('A'):
+                    leading_variants.append(norm[1:])
+
+    # Remove duplicates
+    normalized_variants = list(set(normalized_variants))
+    leading_variants = list(set(leading_variants))
+
+    return ProcessedQuery(
+        original=query,
+        normalized=normalized,
+        terms=terms,
+        normalized_variants=normalized_variants,
+        leading_variants=leading_variants,
+        is_multi_term=is_multi_term,
+        min_length_valid=min_length_valid
+    )
+
+
 def classify_query(query: str) -> QueryType:
     """
     Intelligent query classification using dynamic keyword learning
@@ -817,21 +869,33 @@ async def root():
         "service": "Product AI Search API",
         "version": "3.0.0",
         "status": "healthy",
-        "description": "World-class AI-powered product search with hybrid ML ranking",
+        "description": "Universal AI-powered product search API with single unified endpoint",
         "endpoints": {
-            "search": "POST /search - Main search endpoint with AI/ML hybrid ranking",
-            "similar_products": "GET /search/similar/{product_id} - Find similar products",
-            "click_tracking": "POST /search/click - Track user clicks for learning-to-rank",
-            "feedback": "POST /search/feedback - Collect search quality feedback",
+            "search": "POST /search - Universal endpoint (handles search, click tracking, and feedback)",
             "health": "GET /health - Health check"
         },
+        "actions": {
+            "search": {
+                "description": "Product search with hybrid AI/ML ranking",
+                "parameters": {"action": "search", "query": "required", "filters": "optional"}
+            },
+            "track_click": {
+                "description": "Track user clicks for learning-to-rank",
+                "parameters": {"action": "track_click", "search_id": "required", "clicked_product_id": "required", "rank_position": "required"}
+            },
+            "feedback": {
+                "description": "Submit search quality feedback",
+                "parameters": {"action": "feedback", "search_id": "required", "feedback_type": "required", "feedback_comment": "optional"}
+            }
+        },
         "features": {
+            "single_endpoint": "All operations through one universal /search endpoint",
             "hybrid_search": "Combines 4 techniques: Full-text, Trigram, Exact, Vector (HNSW)",
             "ml_ranking": "7-signal ensemble ranking with configurable weights",
             "query_logging": "All searches logged for analytics and model training",
             "click_tracking": "Track user behavior for learning-to-rank",
-            "multilingual": "Ukrainian, Polish, English support",
-            "performance": "<200ms for 278k products",
+            "multilingual": "Ukrainian, English",
+            "performance": "<200ms for search, <50ms for tracking/feedback",
             "auto_classification": "Intelligent query routing (vendor codes, exact phrases, NL)"
         }
     }
@@ -866,240 +930,248 @@ def _fetch_analogue_product_ids(
     exclude_ids: Set[int],
     max_results: int,
 ) -> List[int]:
-    if not base_product_ids or max_results <= 0:
-        return []
-
-    with get_db_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT pa.base_product_i_d, pa.analogue_product_i_d
-            FROM staging.product_analogue pa
-            WHERE pa.base_product_i_d = ANY(%s)
-            """,
-            (base_product_ids,),
-        )
-        rows = cursor.fetchall()
-
-    analogue_map: Dict[int, List[int]] = {}
-    for base_id, analogue_id in rows:
-        if analogue_id in exclude_ids:
-            continue
-        analogue_map.setdefault(base_id, [])
-        if analogue_id not in analogue_map[base_id]:
-            analogue_map[base_id].append(analogue_id)
-
-    ordered_ids: List[int] = []
-    seen: Set[int] = set()
-
-    for base_id in base_product_ids:
-        for analogue_id in analogue_map.get(base_id, []):
-            if analogue_id in seen or analogue_id in exclude_ids:
-                continue
-            ordered_ids.append(analogue_id)
-            seen.add(analogue_id)
-            if len(ordered_ids) >= max_results:
-                return ordered_ids
-
-    return ordered_ids
+    # Disabled: analogue data is already provided in dim_product.analogue_product_ids field
+    # The bronze.product_analogue_cdc table uses CDC format with JSONB payload which is complex to query
+    # Users can use the analogue_product_ids field from the main search results instead
+    return []
 
 
 @app.post("/search", response_model=SearchResponse)
-async def adaptive_search(request: SearchRequest):
+async def unified_search_endpoint(
+    request: SearchRequest,
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Number of results to skip (pagination)")
+):
+    """
+    **UNIVERSAL SEARCH ENDPOINT - Handles ALL search-related operations**
+
+    This single endpoint handles three types of operations based on the 'action' parameter:
+
+    1. **Product Search** (action='search'):
+       - Intelligent hybrid search combining vector, fulltext, trigram, and exact matching
+       - Supports filters (supplier, weight, availability, etc.)
+       - Auto-classifies queries (vendor codes, exact phrases, natural language)
+       - Returns ranked product results
+
+    2. **Click Tracking** (action='track_click'):
+       - Logs user clicks on search results for learning-to-rank
+       - Tracks click-through rates and user behavior patterns
+       - Returns click_id for confirmation
+
+    3. **Feedback Submission** (action='feedback'):
+       - Collects user feedback on search quality
+       - Supports feedback types: helpful, not_helpful, no_results, irrelevant
+       - Returns success confirmation
+
+    **Performance**: <200ms for search, <50ms for tracking/feedback
+    **Languages**: Ukrainian, English
+    """
     start_time = time.perf_counter()
 
     try:
-        query_type: QueryType = classify_query(request.query)
-
-        filters = SearchFilters(
-            supplier_name=request.supplier_name,
-            weight_min=request.weight_min,
-            weight_max=request.weight_max,
-            is_for_sale=request.is_for_sale,
-            is_for_web=request.is_for_web,
-            has_image=request.has_image,
-        )
-
-        if query_type == QueryType.VENDOR_CODE:
-            filters.vendor_code_query = request.query
-
-        preset_key = request.weight_preset or (
-            'exact_priority' if query_type in {QueryType.VENDOR_CODE, QueryType.EXACT_PHRASE} else 'balanced'
-        )
-        weights: RankingWeights = WEIGHT_PRESETS.get(preset_key, WEIGHT_PRESETS['balanced'])
-
-        enable_vector_search: bool = (query_type == QueryType.NATURAL_LANGUAGE) and (embedding_model is not None)
-
-        if not enable_vector_search:
-            weights = RankingWeights(
-                exact_match=weights.exact_match,
-                fulltext=weights.fulltext,
-                trigram=weights.trigram,
-                vector_similarity=0.0,
-                popularity=weights.popularity,
-                availability=weights.availability,
-                freshness=weights.freshness,
-            ).normalize()
-
-        embedding_vector = generate_embedding(request.query) if enable_vector_search else ZERO_VECTOR
-
-        fetch_limit = min(request.limit + request.offset + 50, 200)
-
-        rows, total_count = _execute_unified_search(
-            query_text=request.query,
-            embedding_vector=embedding_vector,
-            filters=filters,
-            ranking_weights=weights,
-            fetch_limit=fetch_limit,
-            result_limit=request.limit,
-            result_offset=request.offset,
-        )
-
-        seen_ids: Set[int] = {row['product_id'] for row in rows}
-
-        if total_count < request.offset + request.limit:
-            base_ids = [row['product_id'] for row in rows]
-            analogue_ids = _fetch_analogue_product_ids(base_ids, seen_ids, request.limit + fetch_limit)
-
-            if analogue_ids:
-                analogue_rows, _ = _execute_unified_search(
-                    query_text=request.query,
-                    embedding_vector=embedding_vector,
-                    filters=filters,
-                    ranking_weights=weights,
-                    fetch_limit=fetch_limit,
-                    result_limit=request.limit,
-                    result_offset=0,
-                    restrict_product_ids=analogue_ids,
-                )
-
-                for row in analogue_rows:
-                    pid = row['product_id']
-                    if pid in seen_ids:
-                        continue
-                    rows.append(row)
-                    seen_ids.add(pid)
-                    if len(rows) >= request.limit:
-                        break
-
-                total_count = max(total_count, request.offset + len(rows))
-
-        rows.sort(key=lambda r: (-float(r.get('final_score', 0.0)), r.get('product_id')))
-
-        execution_time_ms = (time.perf_counter() - start_time) * 1000
-
-        products: List[ProductResult] = [
-            ProductResult(
-                product_id=row['product_id'],
-                vendor_code=row.get('vendor_code'),
-                name=row.get('name'),
-                ukrainian_name=row.get('ukrainian_name'),
-                main_original_number=row.get('main_original_number'),
-                supplier_name=row.get('supplier_name'),
-                weight=float(row['weight']) if row.get('weight') is not None else None,
-                is_for_sale=row.get('is_for_sale'),
-                is_for_web=row.get('is_for_web'),
-                has_image=row.get('has_image'),
-                has_analogue=row.get('has_analogue'),
-                similarity_score=float(row.get('final_score', 0.0)),
-                ranking_score=float(row.get('final_score', 0.0)),
-            )
-            for row in rows[:request.limit]
-        ]
-
-        # Log the search query
-        search_id = log_search_query(
-            query=request.query,
-            total_results=total_count,
-            execution_time_ms=execution_time_ms,
-            search_type="adaptive"
-        )
-
-        return SearchResponse(
-            query=request.query,
-            total_results=total_count,
-            execution_time_ms=round(execution_time_ms, 2),
-            results=products,
-            search_id=search_id
-        )
-
-    except Exception as exc:
-        logger.error(f"Unified search failed: {exc}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {exc}")
-
-
-@app.post("/search/click", response_model=ClickTrackingResponse)
-async def track_click(request: ClickTrackingRequest):
-    """
-    Track user clicks on search results for learning-to-rank
-
-    This endpoint logs which products users click on for each search query.
-    The data is used to:
-        - Calculate click-through rates (CTR)
-        - Train learning-to-rank models
-        - Improve search relevance over time
-        - Analyze user behavior patterns
-
-    Use Case:
-        When a user clicks on a product in search results, send this event to
-        build behavioral signals for ML ranking.
-    """
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-
-            # Verify search_id exists
-            cursor.execute(
-                "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
-                (request.search_id,)
-            )
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
-
-            # Insert click event
-            cursor.execute("""
-                INSERT INTO analytics_features.search_click_log
-                    (query_id, product_id, rank_position, clicked_at)
-                VALUES (%s, %s, %s, NOW())
-                RETURNING click_id
-            """, (request.search_id, request.product_id, request.rank_position))
-
-            row = cursor.fetchone()
-            click_id = row['click_id'] if row else None
-
-            conn.commit()
-
-            logger.info(f"Logged click: search_id={request.search_id}, product_id={request.product_id}, rank={request.rank_position}")
-
-            return ClickTrackingResponse(
-                success=True,
-                message="Click tracked successfully",
-                click_id=click_id
+        # Route based on action type
+        if request.action == "search":
+            return await _handle_search(request, start_time, limit, offset)
+        elif request.action == "track_click":
+            return await _handle_click_tracking(request, start_time)
+        elif request.action == "feedback":
+            return await _handle_feedback(request, start_time)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid action '{request.action}'. Must be 'search', 'track_click', or 'feedback'"
             )
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Failed to track click: {e}")
-        raise HTTPException(status_code=500, detail=f"Click tracking failed: {str(e)}")
+    except Exception as exc:
+        logger.error(f"Unified search endpoint failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Operation failed: {exc}")
 
 
-@app.post("/search/feedback", response_model=FeedbackResponse)
-async def submit_feedback(request: FeedbackRequest):
-    """
-    Collect user feedback on search quality
+async def _handle_search(request: SearchRequest, start_time: float, limit: int, offset: int) -> SearchResponse:
+    """Handle product search operation"""
 
-    This endpoint collects explicit feedback from users about search results.
-    Feedback types:
-        - 'helpful': Search results were relevant and helpful
-        - 'not_helpful': Search results were not useful
-        - 'no_results': No results found for the query
-        - 'irrelevant': Results were not related to the query
+    if not request.query:
+        raise HTTPException(status_code=400, detail="Query is required for search action")
 
-    Use Case:
-        Allow users to rate search quality, helping identify problem queries
-        and improve search algorithms.
-    """
+    # Business validation: minimum 4 characters (after normalization)
+    normalized_query = request.query.strip()
+    if len(normalized_query) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Search query must be at least 4 characters long"
+        )
+
+    query_type: QueryType = classify_query(request.query)
+
+    # No filters - query-only search
+    filters = None
+
+    # Auto-select ranking preset based on query type
+    preset_key = 'exact_priority' if query_type in {QueryType.VENDOR_CODE, QueryType.EXACT_PHRASE} else 'balanced'
+    weights: RankingWeights = WEIGHT_PRESETS.get(preset_key, WEIGHT_PRESETS['balanced'])
+
+    enable_vector_search: bool = (query_type == QueryType.NATURAL_LANGUAGE) and (embedding_model is not None)
+
+    if not enable_vector_search:
+        weights = RankingWeights(
+            exact_match=weights.exact_match,
+            fulltext=weights.fulltext,
+            trigram=weights.trigram,
+            vector_similarity=0.0,
+            popularity=weights.popularity,
+            availability=weights.availability,
+            freshness=weights.freshness,
+        ).normalize()
+
+    embedding_vector = generate_embedding(request.query) if enable_vector_search else ZERO_VECTOR
+
+    fetch_limit = min(limit + offset + 50, 200)
+
+    rows, total_count = _execute_unified_search(
+        query_text=request.query,
+        embedding_vector=embedding_vector,
+        filters=filters,
+        ranking_weights=weights,
+        fetch_limit=fetch_limit,
+        result_limit=limit,
+        result_offset=offset,
+    )
+
+    seen_ids: Set[int] = {row['product_id'] for row in rows}
+
+    if total_count < offset + limit:
+        base_ids = [row['product_id'] for row in rows]
+        analogue_ids = _fetch_analogue_product_ids(base_ids, seen_ids, limit + fetch_limit)
+
+        if analogue_ids:
+            analogue_rows, _ = _execute_unified_search(
+                query_text=request.query,
+                embedding_vector=embedding_vector,
+                filters=filters,
+                ranking_weights=weights,
+                fetch_limit=fetch_limit,
+                result_limit=limit,
+                result_offset=0,
+                restrict_product_ids=analogue_ids,
+            )
+
+            for row in analogue_rows:
+                pid = row['product_id']
+                if pid in seen_ids:
+                    continue
+                rows.append(row)
+                seen_ids.add(pid)
+                if len(rows) >= limit:
+                    break
+
+            total_count = max(total_count, offset + len(rows))
+
+    rows.sort(key=lambda r: (-float(r.get('final_score', 0.0)), r.get('product_id')))
+
+    execution_time_ms = (time.perf_counter() - start_time) * 1000
+
+    products: List[ProductResult] = [
+        ProductResult(
+            product_id=row['product_id'],
+            vendor_code=row.get('vendor_code'),
+            name=row.get('name'),
+            ukrainian_name=row.get('ukrainian_name'),
+            main_original_number=row.get('main_original_number'),
+            supplier_name=row.get('supplier_name'),
+            size=row.get('size'),
+            weight=float(row['weight']) if row.get('weight') is not None else None,
+            is_for_sale=row.get('is_for_sale'),
+            is_for_web=row.get('is_for_web'),
+            has_image=row.get('has_image'),
+            has_analogue=row.get('has_analogue'),
+            similarity_score=float(row.get('final_score', 0.0)),
+            ranking_score=float(row.get('final_score', 0.0)),
+            total_available_amount=float(row['total_available_amount']) if row.get('total_available_amount') is not None else None,
+            storage_count=row.get('storage_count'),
+            original_number_ids=row.get('original_number_ids'),
+            analogue_product_ids=row.get('analogue_product_ids'),
+            availability_score=float(row['availability_score']) if row.get('availability_score') is not None else None,
+            freshness_score=float(row['freshness_score']) if row.get('freshness_score') is not None else None,
+        )
+        for row in rows[:limit]
+    ]
+
+    # Log the search query
+    search_id = log_search_query(
+        query=request.query,
+        total_results=total_count,
+        execution_time_ms=execution_time_ms,
+        search_type="adaptive"
+    )
+
+    return SearchResponse(
+        action="search",
+        success=True,
+        execution_time_ms=round(execution_time_ms, 2),
+        query=request.query,
+        total_results=total_count,
+        results=products,
+        search_id=search_id
+    )
+
+
+async def _handle_click_tracking(request: SearchRequest, start_time: float) -> SearchResponse:
+    """Handle click tracking operation"""
+
+    if not request.search_id or not request.clicked_product_id or not request.rank_position:
+        raise HTTPException(
+            status_code=400,
+            detail="search_id, clicked_product_id, and rank_position are required for track_click action"
+        )
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Verify search_id exists
+        cursor.execute(
+            "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
+            (request.search_id,)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
+
+        # Insert click event
+        cursor.execute("""
+            INSERT INTO analytics_features.search_click_log
+                (query_id, product_id, rank_position, clicked_at)
+            VALUES (%s, %s, %s, NOW())
+            RETURNING click_id
+        """, (request.search_id, request.clicked_product_id, request.rank_position))
+
+        row = cursor.fetchone()
+        click_id = row['click_id'] if row else None
+
+        conn.commit()
+
+        logger.info(f"Logged click: search_id={request.search_id}, product_id={request.clicked_product_id}, rank={request.rank_position}")
+
+    execution_time_ms = (time.perf_counter() - start_time) * 1000
+
+    return SearchResponse(
+        action="track_click",
+        success=True,
+        execution_time_ms=round(execution_time_ms, 2),
+        message="Click tracked successfully",
+        click_id=click_id
+    )
+
+
+async def _handle_feedback(request: SearchRequest, start_time: float) -> SearchResponse:
+    """Handle feedback submission operation"""
+
+    if not request.search_id or not request.feedback_type:
+        raise HTTPException(
+            status_code=400,
+            detail="search_id and feedback_type are required for feedback action"
+        )
+
     valid_feedback_types = {'helpful', 'not_helpful', 'no_results', 'irrelevant'}
     if request.feedback_type not in valid_feedback_types:
         raise HTTPException(
@@ -1107,113 +1179,36 @@ async def submit_feedback(request: FeedbackRequest):
             detail=f"Invalid feedback_type. Must be one of: {valid_feedback_types}"
         )
 
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
 
-            # Verify search_id exists
-            cursor.execute(
-                "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
-                (request.search_id,)
-            )
-            if not cursor.fetchone():
-                raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
-
-            # Store feedback (update search_query_log with feedback)
-            cursor.execute("""
-                UPDATE analytics_features.search_query_log
-                SET feedback_type = %s, feedback_comment = %s, feedback_timestamp = NOW()
-                WHERE query_id = %s
-            """, (request.feedback_type, request.comment, request.search_id))
-
-            conn.commit()
-
-            logger.info(f"Logged feedback: search_id={request.search_id}, type={request.feedback_type}")
-
-            return FeedbackResponse(
-                success=True,
-                message="Feedback submitted successfully"
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to submit feedback: {e}")
-        raise HTTPException(status_code=500, detail=f"Feedback submission failed: {str(e)}")
-
-
-@app.get("/search/similar/{product_id}", response_model=SearchResponse)
-async def find_similar_products(
-    product_id: int,
-    limit: int = Query(10, ge=1, le=50, description="Maximum number of similar products")
-):
-    """
-    Find products similar to a given product.
-
-    Use Case: "Customers who viewed this also viewed..."
-    Method: Product-to-product similarity using embeddings
-    """
-    import time
-    start_time = time.time()
-
-    try:
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-
-            # Check if product exists
-            cursor.execute(
-                "SELECT name FROM staging_marts.dim_product WHERE product_id = %s",
-                (product_id,)
-            )
-            source_product = cursor.fetchone()
-
-            if not source_product:
-                raise HTTPException(status_code=404, detail=f"Product {product_id} not found")
-
-            # Find similar products
-            query = """
-                SELECT
-                    p.product_id,
-                    p.vendor_code,
-                    p.name,
-                    p.ukrainian_name,
-                    p.main_original_number,
-                    p.supplier_name,
-                    p.weight,
-                    p.is_for_sale,
-                    p.is_for_web,
-                    p.has_image,
-                    p.has_analogue,
-                    1 - (e1.embedding <=> e2.embedding) AS similarity_score
-                FROM analytics_features.product_embeddings e1
-                CROSS JOIN analytics_features.product_embeddings e2
-                JOIN staging_marts.dim_product p ON p.product_id = e2.product_id
-                WHERE e1.product_id = %s
-                    AND e2.product_id != %s
-                ORDER BY e1.embedding <=> e2.embedding
-                LIMIT %s;
-            """
-
-            cursor.execute(query, (product_id, product_id, limit))
-            rows = cursor.fetchall()
-
-        # Format results
-        results = [ProductResult(**dict(row)) for row in rows]
-
-        execution_time_ms = (time.time() - start_time) * 1000
-
-        return SearchResponse(
-            query=f"Similar to product {product_id}: {source_product['name']}",
-            total_results=len(results),
-            execution_time_ms=round(execution_time_ms, 2),
-            results=results
+        # Verify search_id exists
+        cursor.execute(
+            "SELECT query_id FROM analytics_features.search_query_log WHERE query_id = %s",
+            (request.search_id,)
         )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail=f"Search ID {request.search_id} not found")
 
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Similar products search failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+        # Store feedback (update search_query_log with feedback)
+        cursor.execute("""
+            UPDATE analytics_features.search_query_log
+            SET feedback_type = %s, feedback_comment = %s, feedback_timestamp = NOW()
+            WHERE query_id = %s
+        """, (request.feedback_type, request.feedback_comment, request.search_id))
+
+        conn.commit()
+
+        logger.info(f"Logged feedback: search_id={request.search_id}, type={request.feedback_type}")
+
+    execution_time_ms = (time.perf_counter() - start_time) * 1000
+
+    return SearchResponse(
+        action="feedback",
+        success=True,
+        execution_time_ms=round(execution_time_ms, 2),
+        message="Feedback submitted successfully"
+    )
 
 
 # ============================================================================

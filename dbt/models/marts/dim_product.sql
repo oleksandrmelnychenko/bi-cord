@@ -45,70 +45,70 @@ analogues_agg as (
 enriched as (
     select
         -- Core Identity
-        product_id,
-        net_uid,
-        created,
-        updated,
+        p.product_id,
+        p.net_uid,
+        p.created,
+        p.updated,
 
         -- Basic Product Information
-        name,
-        vendor_code,
-        LEFT(vendor_code, 4) as supplier_prefix,
-        description,
-        size,
-        weight,
-        volume,
-        image,
-        main_original_number,
+        p.name,
+        p.vendor_code,
+        LEFT(p.vendor_code, 4) as supplier_prefix,
+        p.description,
+        p.size,
+        p.weight,
+        p.volume,
+        p.image,
+        p.main_original_number,
 
         -- Multilingual Content
-        name_pl as polish_name,
-        description_pl as polish_description,
-        name_ua as ukrainian_name,
-        description_ua as ukrainian_description,
+        p.name_pl as polish_name,
+        p.description_pl as polish_description,
+        p.name_ua as ukrainian_name,
+        p.description_ua as ukrainian_description,
 
         -- Search Optimization Fields (for reference)
-        search_name,
-        search_vendor_code,
-        search_name_pl as search_polish_name,
-        search_name_ua as search_ukrainian_name,
+        p.search_name,
+        p.search_vendor_code,
+        p.search_name_pl as search_polish_name,
+        p.search_name_ua as search_ukrainian_name,
 
         -- Business Flags
-        has_analogue,
-        has_image,
-        is_for_sale,
-        is_for_web,
-        is_for_zero_sale,
-        has_component,
+        p.has_analogue,
+        p.has_image,
+        p.is_for_sale,
+        p.is_for_web,
+        p.is_for_zero_sale,
+        p.has_component,
 
         -- Specifications
-        ucgfea,
-        standard,
+        p.ucgfea,
+        p.standard,
 
         -- Source System Integration
-        source_amg_code,
-        source_fenix_code,
+        p.source_amg_code,
+        p.source_fenix_code,
 
         -- Computed Columns
-        CURRENT_DATE - created::date as days_since_created,
-        CURRENT_DATE - updated::date as days_since_updated,
+        CURRENT_DATE - p.created::date as days_since_created,
+        CURRENT_DATE - p.updated::date as days_since_updated,
 
         CASE
-            WHEN vendor_code IS NULL OR LENGTH(vendor_code) < 4 THEN 'Unknown'
-            ELSE LEFT(vendor_code, 4)
+            WHEN p.vendor_code IS NULL OR LENGTH(p.vendor_code) < 4 THEN 'Unknown'
+            ELSE LEFT(p.vendor_code, 4)
         END as supplier_name,
 
         CASE
-            WHEN name_pl IS NOT NULL AND name_ua IS NOT NULL THEN 'Complete'
-            WHEN name_pl IS NOT NULL OR name_ua IS NOT NULL THEN 'Partial'
+            WHEN p.name_pl IS NOT NULL AND p.name_ua IS NOT NULL THEN 'Complete'
+            WHEN p.name_pl IS NOT NULL OR p.name_ua IS NOT NULL THEN 'Partial'
             ELSE 'Missing'
         END as multilingual_status,
 
         CASE
-            WHEN weight IS NULL OR weight = 0 THEN 'Missing'
-            WHEN weight > 0 AND weight < 1 THEN 'Light (<1kg)'
-            WHEN weight >= 1 AND weight < 10 THEN 'Medium (1-10kg)'
-            WHEN weight >= 10 THEN 'Heavy (>10kg)'
+            WHEN p.weight IS NULL OR p.weight = 0 THEN 'Missing'
+            WHEN p.weight > 0 AND p.weight < 1 THEN 'Light (<1kg)'
+            WHEN p.weight >= 1 AND p.weight < 10 THEN 'Medium (1-10kg)'
+            WHEN p.weight >= 10 THEN 'Heavy (>10kg)'
         END as weight_category,
 
         -- **DENORMALIZED AVAILABILITY** (from ProductAvailability)
@@ -137,8 +137,8 @@ enriched as (
         END as freshness_score,
 
         -- Metadata
-        source_timestamp,
-        ingested_at
+        p.source_timestamp,
+        p.ingested_at
 
     from product_base p
     left join availability_agg av on p.product_id = av.product_id

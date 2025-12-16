@@ -36,7 +36,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

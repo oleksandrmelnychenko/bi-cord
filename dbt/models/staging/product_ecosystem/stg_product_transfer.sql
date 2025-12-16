@@ -22,11 +22,8 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'ResponsibleID')::bigint as responsible_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'FromStorageID')::bigint as from_storage_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ToStorageID')::bigint as to_storage_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'OrganizationID')::bigint as organization_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'IsManagement')::boolean as is_management,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
@@ -45,7 +42,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

@@ -80,3 +80,11 @@ See `docs/ML_SEARCH_IMPLEMENTATION.md` for complete documentation.
    ./venv-py311/bin/uvicorn src.api.search_api:app --host 0.0.0.0 --port 8000
    # Visit http://localhost:8000/docs for interactive API documentation
    ```
+
+## Data Pipeline Runbook
+
+Follow `docs/data_pipeline_runbook.md` for a concise guide to:
+- bootstrap Docker services and Prefect deployments,
+- sync CDC payloads into MinIO and Postgres,
+- build dbt staging + mart layers,
+- validate the state of bronze/staging/marts with `scripts/pipeline_healthcheck.py`.

@@ -19,7 +19,6 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'OriginalNumberID')::bigint as original_number_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ProductID')::bigint as product_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         to_timestamp((cdc_payload->'payload'->'after'->>'Updated')::bigint / 1000) as updated,
         (cdc_payload->'payload'->'after'->>'IsMainOriginalNumber')::boolean as is_main_original_number,
         -- CDC Metadata
@@ -39,7 +38,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

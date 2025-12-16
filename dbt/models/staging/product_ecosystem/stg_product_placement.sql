@@ -24,15 +24,10 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'ProductID')::bigint as product_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'StorageID')::bigint as storage_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'PackingListPackageOrderItemID')::bigint as packing_list_package_order_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'SupplyOrderUkraineItemID')::bigint as supply_order_ukraine_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ProductIncomeItemID')::bigint as product_income_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ConsignmentItemID')::bigint as consignment_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'IsOriginal')::boolean as is_original,
         (cdc_payload->'payload'->'after'->>'IsHistorySet')::boolean as is_history_set,
         -- CDC Metadata
@@ -52,7 +47,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

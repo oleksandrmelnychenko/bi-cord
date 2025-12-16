@@ -20,12 +20,9 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'ProductAvailabilityID')::bigint as product_availability_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
-        (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'Qty')::numeric as qty,
         to_timestamp((cdc_payload->'payload'->'after'->>'Updated')::bigint / 1000) as updated,
         (cdc_payload->'payload'->'after'->>'ConsignmentItemID')::bigint as consignment_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'IsReSaleReservation')::boolean as is_re_sale_reservation,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
@@ -44,7 +41,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

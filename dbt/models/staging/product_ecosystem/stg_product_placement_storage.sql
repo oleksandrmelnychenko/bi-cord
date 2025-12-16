@@ -19,11 +19,7 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'ProductId')::bigint as product_id,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
-        (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'StorageId')::bigint as storage_id,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
-        (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'NetUID')::uuid as net_u_i_d,
         to_timestamp((cdc_payload->'payload'->'after'->>'Created')::bigint / 1000) as created,
         to_timestamp((cdc_payload->'payload'->'after'->>'Updated')::bigint / 1000) as updated,
@@ -45,7 +41,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

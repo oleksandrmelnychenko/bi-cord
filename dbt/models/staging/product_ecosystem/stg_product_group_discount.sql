@@ -21,7 +21,6 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'IsActive')::boolean as is_active,
         (cdc_payload->'payload'->'after'->>'NetUID')::uuid as net_u_i_d,
         (cdc_payload->'payload'->'after'->>'ProductGroupID')::bigint as product_group_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         to_timestamp((cdc_payload->'payload'->'after'->>'Updated')::bigint / 1000) as updated,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
@@ -40,7 +39,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

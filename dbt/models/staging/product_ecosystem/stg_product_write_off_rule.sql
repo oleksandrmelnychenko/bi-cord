@@ -21,13 +21,9 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'CreatedByID')::bigint as created_by_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'UpdatedByID')::bigint as updated_by_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ProductID')::bigint as product_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'on')::text as on,
         (cdc_payload->'payload'->'after'->>'ProductGroupID')::bigint as product_group_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
-        (cdc_payload->'payload'->'after'->>'on')::text as on,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
         (cdc_payload->'payload'->'source'->>'ts_ms')::bigint as source_ts_ms,
@@ -45,7 +41,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

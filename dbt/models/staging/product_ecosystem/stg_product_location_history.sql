@@ -16,18 +16,14 @@ parsed as (
         (cdc_payload->'payload'->'after'->>'StorageID')::bigint as storage_i_d,
         (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'ProductPlacementID')::bigint as product_placement_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'OrderItemID')::bigint as order_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'DepreciatedOrderItemID')::bigint as depreciated_order_item_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         (cdc_payload->'payload'->'after'->>'TypeOfMovement')::integer as type_of_movement,
         (cdc_payload->'payload'->'after'->>'NetUID')::uuid as net_u_i_d,
         to_timestamp((cdc_payload->'payload'->'after'->>'Created')::bigint / 1000) as created,
         to_timestamp((cdc_payload->'payload'->'after'->>'Updated')::bigint / 1000) as updated,
         (cdc_payload->'payload'->'after'->>'Deleted')::boolean as deleted,
         (cdc_payload->'payload'->'after'->>'HistoryInvoiceEditID')::bigint as history_invoice_edit_i_d,
-        (cdc_payload->'payload'->'after'->>'references')::text as references,
         -- CDC Metadata
         cdc_payload->'payload'->>'op' as cdc_operation,
         (cdc_payload->'payload'->'source'->>'ts_ms')::bigint as source_ts_ms,
@@ -45,7 +41,7 @@ deduplicated as (
     select
         *,
         row_number() over (
-            partition by id
+            partition by i_d
             order by source_ts_ms desc, kafka_offset desc
         ) as rn
     from parsed

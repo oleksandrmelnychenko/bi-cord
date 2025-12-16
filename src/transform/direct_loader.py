@@ -24,13 +24,19 @@ def get_s3_client():
 
 
 def get_pg_connection():
-    """Create PostgreSQL connection."""
+    """Create PostgreSQL connection using staging defaults."""
+    host = os.getenv("STAGING_DB_HOST") or os.getenv("POSTGRES_HOST", "localhost")
+    port = int(os.getenv("STAGING_DB_PORT") or os.getenv("POSTGRES_PORT", "5432"))
+    database = os.getenv("STAGING_DB_NAME") or os.getenv("POSTGRES_DB", "analytics")
+    user = os.getenv("STAGING_DB_USER") or os.getenv("POSTGRES_USER", "analytics")
+    password = os.getenv("STAGING_DB_PASSWORD") or os.getenv("POSTGRES_PASSWORD", "analytics")
+
     return psycopg2.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=os.getenv("POSTGRES_PORT", "5433"),
-        database=os.getenv("POSTGRES_DB", "analytics"),
-        user=os.getenv("POSTGRES_USER", "analytics"),
-        password=os.getenv("POSTGRES_PASSWORD", "analytics"),
+        host=host,
+        port=port,
+        database=database,
+        user=user,
+        password=password,
     )
 
 
